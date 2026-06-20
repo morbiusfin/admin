@@ -35,7 +35,7 @@
         renderTable(s ? s.value : "");
         if (novos.length) adToast("🔔 " + (novos.length === 1 ? "Nova conta: " + (novos[0].email || "(sem email)") : novos.length + " novas contas"));
       } catch (e) {}
-    }, 10000);   // a cada 10s: conta nova aparece sozinha + alerta
+    }, 5000);   // a cada 5s: conta nova aparece sozinha + alerta
   }
 
   var PW_EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';

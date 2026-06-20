@@ -1,5 +1,5 @@
 /* SW — network-first p/ o painel admin (Supabase). */
-const CACHE = "mfadmin-v9";
+const CACHE = "mfadmin-v10";
 const ASSETS = [
   "./", "./index.html",
   "./css/styles.css",
