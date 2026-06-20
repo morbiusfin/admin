@@ -1,9 +1,9 @@
-/* SW — network-first p/ o app; licencas.json NUNCA é cacheado (sempre fresco da API/Pages) */
-const CACHE = "mfadmin-v1";
+/* SW — network-first p/ o painel admin (Supabase). */
+const CACHE = "mfadmin-v2";
 const ASSETS = [
   "./", "./index.html",
   "./css/styles.css",
-  "./js/sign.js", "./js/github.js", "./js/app.js",
+  "./js/admin.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png"
 ];
@@ -12,9 +12,7 @@ self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Pr
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  // nunca cachear chamadas à API do GitHub nem o próprio licencas.json
-  if (url.hostname === "api.github.com" || /licencas\.json/.test(url.pathname)) return;
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin) return;   // Supabase/CDN: deixa a rede cuidar
   e.respondWith(
     fetch(e.request).then(res => { const cp = res.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)).catch(() => {}); return res; })
       .catch(() => caches.match(e.request).then(h => h || caches.match("./index.html")))
