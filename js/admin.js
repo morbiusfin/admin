@@ -64,10 +64,14 @@
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
     rows.forEach(function (l) {
       var bloq = l.status === "bloqueado";
+      var tier = l.plano || "teste";
+      var tEmoji = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" }[tier] || "broto";
+      var tNome = { teste: "Teste", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
+      var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
       var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
-      html += '<div class="ad-row" data-uid="' + esc(l.user_id) + '">'
+      html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
-        + '<div class="ad-sub"><span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
+        + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
         + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '<span>· vitalício</span>') + '</div></div>'
         + '<div class="ad-controls">'
         + '<select data-k="plano" title="Plano">' + planos + '</select>'
