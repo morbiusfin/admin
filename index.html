@@ -59,6 +59,8 @@
     .pw-wrap input { width: 100%; padding-right: 44px !important; }
     .pw-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; }
     .pw-eye svg { display: block; }
+    .ad-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: var(--accent); color: #06281c; font-weight: 800; font-size: 13.5px; padding: 11px 18px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; z-index: 9999; max-width: 90vw; text-align: center; }
+    .ad-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     @media (max-width: 560px) { .ad-row { grid-template-columns: 1fr; } .ad-controls { justify-content: flex-start; } }
   </style>
 </head>

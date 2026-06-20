@@ -12,6 +12,12 @@
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
   var _all = [], _email = "", _refreshT = null;
+  function adToast(msg) {
+    var t = document.getElementById("adToast");
+    if (!t) { t = document.createElement("div"); t.id = "adToast"; t.className = "ad-toast"; document.body.appendChild(t); }
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 6000);
+  }
   function stopAutoRefresh() { if (_refreshT) { clearInterval(_refreshT); _refreshT = null; } }
   function startAutoRefresh() {
     stopAutoRefresh();
@@ -23,11 +29,13 @@
         var q = await client().from("licencas").select("*").order("criado_em", { ascending: false });
         if (q.error || !q.data) return;
         if (JSON.stringify(q.data) === JSON.stringify(_all)) return;     // nada mudou → sem flicker
+        var novos = q.data.filter(function (n) { return !_all.some(function (o) { return o.email === n.email; }); });
         _all = q.data;
         var s = document.getElementById("adSearch");
         renderTable(s ? s.value : "");
+        if (novos.length) adToast("🔔 " + (novos.length === 1 ? "Nova conta: " + (novos[0].email || "(sem email)") : novos.length + " novas contas"));
       } catch (e) {}
-    }, 15000);   // a cada 15s: conta nova aparece sozinha
+    }, 10000);   // a cada 10s: conta nova aparece sozinha + alerta
   }
 
   var PW_EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
