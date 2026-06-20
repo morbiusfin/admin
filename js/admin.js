@@ -13,6 +13,21 @@
   var who = function () { return document.getElementById("adWho"); };
   var _all = [], _email = "";
 
+  var PW_EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var PW_EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  function pwEyes() {
+    try {
+      document.querySelectorAll('input[type="password"]').forEach(function (input) {
+        if (input.dataset.eye) return; input.dataset.eye = "1";
+        var p = input.parentNode; if (!p) return;
+        var w = document.createElement("span"); w.className = "pw-wrap"; p.insertBefore(w, input); w.appendChild(input);
+        var b = document.createElement("button"); b.type = "button"; b.className = "pw-eye"; b.tabIndex = -1; b.setAttribute("aria-label", "Mostrar senha"); b.innerHTML = PW_EYE;
+        b.onmousedown = function (e) { e.preventDefault(); };
+        b.onclick = function () { var show = input.getAttribute("type") === "password"; input.setAttribute("type", show ? "text" : "password"); b.innerHTML = show ? PW_EYE_OFF : PW_EYE; };
+        w.appendChild(b);
+      });
+    } catch (e) {}
+  }
   function msg(t, cls) { var m = $("#adMsg"); if (m) { m.textContent = t || ""; m.className = "ad-msg" + (cls ? (" " + cls) : ""); } }
   function fmtDate(s) { if (!s) return "—"; try { var d = new Date(s); if (isNaN(d.getTime())) return String(s).slice(0, 10); return d.toLocaleDateString("pt-BR"); } catch (e) { return String(s).slice(0, 10); } }
 
@@ -25,6 +40,7 @@
       + '<button class="btn primary" id="adGo">Entrar</button></div>';
     $("#adGo").onclick = doLogin;
     $("#adSen").onkeydown = function (e) { if (e.key === "Enter") doLogin(); };
+    pwEyes();
   }
   async function doLogin() {
     var c = client(); if (!c) { msg("Sem conexão", "bad"); return; }
