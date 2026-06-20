@@ -64,15 +64,18 @@
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
     rows.forEach(function (l) {
       var bloq = l.status === "bloqueado";
-      var planos = ["teste", "diario", "semanal", "mensal", "anual", "vitalicio"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
+      var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
       html += '<div class="ad-row" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
         + '<div class="ad-sub"><span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
-        + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '') + '</div></div>'
+        + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '<span>· vitalício</span>') + '</div></div>'
         + '<div class="ad-controls">'
         + '<select data-k="plano" title="Plano">' + planos + '</select>'
         + '<input type="date" data-k="validade" title="Validade" value="' + (l.validade ? String(l.validade).slice(0, 10) : "") + '">'
-        + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Desbloquear" : "Bloquear") + '</button>'
+        + '<div class="ad-quick"><button class="btn ghost sm" data-act="plus30" title="+30 dias">+30d</button>'
+        + '<button class="btn ghost sm" data-act="plus1y" title="+1 ano">+1a</button>'
+        + '<button class="btn ghost sm" data-act="vitalicio" title="Vitalício (sem validade)">Vit.</button></div>'
+        + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Ativar" : "Bloquear") + '</button>'
         + '<button class="btn primary sm" data-act="save">Salvar</button>'
         + '</div></div>';
     });
@@ -84,6 +87,9 @@
       var uid = row.dataset.uid;
       row.querySelector('[data-act="toggle"]').onclick = function () { toggleBlock(uid); };
       row.querySelector('[data-act="save"]').onclick = function () { saveRow(uid, row); };
+      row.querySelector('[data-act="plus30"]').onclick = function () { shiftValidade(uid, row, 30); };
+      row.querySelector('[data-act="plus1y"]').onclick = function () { shiftValidade(uid, row, 365); };
+      row.querySelector('[data-act="vitalicio"]').onclick = function () { setVitalicio(uid, row); };
     });
   }
   var _searchT = null;
@@ -98,11 +104,35 @@
   async function saveRow(uid, row) {
     var plano = row.querySelector('[data-k="plano"]').value;
     var validade = row.querySelector('[data-k="validade"]').value || null;
+    var email = (function () { var l = _all.find(function (x) { return x.user_id === uid; }); return l ? (l.email || "").toLowerCase().trim() : null; })();
     var btn = row.querySelector('[data-act="save"]'); btn.textContent = "…";
-    var r = await client().from("licencas").update({ plano: plano, validade: validade }).eq("user_id", uid);
+    var upd = { plano: plano, validade: validade };
+    if (email) upd.email = email;
+    var r = await client().from("licencas").update(upd).eq("user_id", uid);
     if (r.error) { btn.textContent = "Salvar"; alert("Falha: " + r.error.message); return; }
     var l = _all.find(function (x) { return x.user_id === uid; }); if (l) { l.plano = plano; l.validade = validade; }
     btn.textContent = "✓"; setTimeout(function () { btn.textContent = "Salvar"; }, 1200);
+  }
+  // shiftValidade: soma dias à validade (partindo do maior entre hoje e validade atual)
+  async function shiftValidade(uid, row, dias) {
+    var l = _all.find(function (x) { return x.user_id === uid; }); if (!l) return;
+    var base = new Date();
+    if (l.validade) { var v = new Date(l.validade); if (!isNaN(v.getTime()) && v > base) base = v; }
+    base.setDate(base.getDate() + dias);
+    var novaVal = base.toISOString().slice(0, 10);
+    var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = novaVal;
+    var r = await client().from("licencas").update({ validade: novaVal }).eq("user_id", uid);
+    if (r.error) { alert("Falha: " + r.error.message); return; }
+    l.validade = novaVal;
+    renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
+  }
+  // setVitalicio: remove a validade (null = nunca expira)
+  async function setVitalicio(uid, row) {
+    var r = await client().from("licencas").update({ validade: null }).eq("user_id", uid);
+    if (r.error) { alert("Falha: " + r.error.message); return; }
+    var l = _all.find(function (x) { return x.user_id === uid; }); if (l) l.validade = null;
+    var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = "";
+    renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
   }
   boot();
 })();
