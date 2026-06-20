@@ -11,7 +11,24 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]); }); };
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
-  var _all = [], _email = "";
+  var _all = [], _email = "", _refreshT = null;
+  function stopAutoRefresh() { if (_refreshT) { clearInterval(_refreshT); _refreshT = null; } }
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    _refreshT = setInterval(async function () {
+      if (document.hidden) return;
+      var ae = document.activeElement;
+      if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;   // não atualiza enquanto edita/busca
+      try {
+        var q = await client().from("licencas").select("*").order("criado_em", { ascending: false });
+        if (q.error || !q.data) return;
+        if (JSON.stringify(q.data) === JSON.stringify(_all)) return;     // nada mudou → sem flicker
+        _all = q.data;
+        var s = document.getElementById("adSearch");
+        renderTable(s ? s.value : "");
+      } catch (e) {}
+    }, 15000);   // a cada 15s: conta nova aparece sozinha
+  }
 
   var PW_EYE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
   var PW_EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
@@ -32,6 +49,7 @@
   function fmtDate(s) { if (!s) return "—"; try { var d = new Date(s); if (isNaN(d.getTime())) return String(s).slice(0, 10); return d.toLocaleDateString("pt-BR"); } catch (e) { return String(s).slice(0, 10); } }
 
   function showLogin(m, bad) {
+    stopAutoRefresh();
     who().innerHTML = "";
     view().innerHTML = '<div class="ad-card ad-login">'
       + '<div class="ad-field"><span>Email do admin</span><input id="adEmail" type="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="voce@email.com"></div>'
@@ -69,6 +87,7 @@
     }
     _all = q.data || [];
     renderTable("");
+    startAutoRefresh();
   }
   function renderTable(filter) {
     var f = (filter || "").trim().toLowerCase();
