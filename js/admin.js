@@ -64,7 +64,7 @@
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
     rows.forEach(function (l) {
       var bloq = l.status === "bloqueado";
-      var planos = ["teste", "mensal", "anual", "vitalicio"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
+      var planos = ["teste", "diario", "semanal", "mensal", "anual", "vitalicio"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
       html += '<div class="ad-row" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
         + '<div class="ad-sub"><span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
