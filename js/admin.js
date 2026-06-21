@@ -101,9 +101,9 @@
   }
   function renderTable(filter) {
     var f = (filter || "").trim().toLowerCase();
-    var rows = _all.filter(function (l) { return !f || String(l.email || "").toLowerCase().indexOf(f) >= 0; });
+    var rows = _all.filter(function (l) { return !f || String(l.email || "").toLowerCase().indexOf(f) >= 0 || String(l.nome || "").toLowerCase().indexOf(f) >= 0; });
     var ativos = _all.filter(function (l) { return l.status !== "bloqueado"; }).length;
-    var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar email…" value="' + esc(filter || "") + '">'
+    var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome ou email…" value="' + esc(filter || "") + '">'
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
       + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div><div class="ad-rows">';
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
@@ -111,11 +111,13 @@
       var bloq = l.status === "bloqueado";
       var tier = l.plano || "teste";
       var tEmoji = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" }[tier] || "broto";
-      var tNome = { teste: "Teste", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
+      var tNome = { teste: "Novo", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
       var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
-      var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + p + '</option>'; }).join("");
+      var planoLbl = { teste: "Novo", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
+      var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
+      var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
-        + '<div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
+        + '<div><div class="ad-name">' + nomeTxt + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
         + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
         + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '<span>· vitalício</span>') + '</div></div>'
         + '<div class="ad-controls">'
