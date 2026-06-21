@@ -6,7 +6,9 @@
   var SB_URL = "https://fyjzrsmfeokdkhboeopc.supabase.co";
   var SB_KEY = "sb_publishable_oUTz-QGMaaMo42n0hXJMlw_JVUst6Om";
   var sb = null;
-  function client() { if (sb) return sb; if (!window.supabase || !window.supabase.createClient) return null; sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } }); return sb; }
+  // storageKey próprio ("mfadmin-auth"): app e admin ficam no MESMO origin (morbiusfin.github.io) e dividem
+  // localStorage; sem isso a sessão do admin sobrescreveria a do app (e vice-versa). Isolado, um não derruba o outro.
+  function client() { if (sb) return sb; if (!window.supabase || !window.supabase.createClient) return null; sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "mfadmin-auth" } }); return sb; }
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]); }); };
   var view = function () { return document.getElementById("adView"); };
