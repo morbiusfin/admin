@@ -18,7 +18,10 @@
   // dias restantes da licença (pro admin saber quanto falta)
   function diasInfo(v) {
     if (!v) return { txt: "vitalício", cls: "dias-vit" };
-    var d = new Date(v); if (isNaN(d.getTime())) return { txt: "", cls: "" };
+    // vence no FIM do dia, horário de Brasília (GMT-03) — não meia-noite UTC
+    var s = String(v);
+    var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+    if (isNaN(d.getTime())) return { txt: "", cls: "" };
     var dias = Math.ceil((d - new Date()) / 86400000);
     if (dias < 0) return { txt: "vencido", cls: "dias-venc" };
     if (dias === 0) return { txt: "vence hoje", cls: "dias-venc" };
