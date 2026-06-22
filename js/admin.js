@@ -136,9 +136,9 @@
       var bloq = l.status === "bloqueado";
       var tier = l.plano || "teste";
       var tEmoji = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" }[tier] || "broto";
-      var tNome = { teste: "Novo", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
+      var tNome = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
       var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
-      var planoLbl = { teste: "Novo", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
+      var planoLbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
       var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
       var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
       var telTxt = (l.telefone && String(l.telefone).trim()) ? '<div class="ad-tel">📱 ' + esc(l.telefone) + '</div>' : '';
@@ -162,6 +162,15 @@
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
+      var dateInp = row.querySelector('[data-k="validade"]');
+      var planoSel = row.querySelector('[data-k="plano"]');
+      // REGRA: data definida = plano GRÁTIS (só o Grátis expira). Plano pago = sem data (vitalício).
+      function lock() { if (dateInp.value) { planoSel.value = "teste"; planoSel.disabled = true; } else { planoSel.disabled = false; } }
+      lock();
+      // mudar a data → sobe AUTOMÁTICO como Grátis (reflete no app do usuário na hora)
+      dateInp.onchange = function () { lock(); if (dateInp.value) setDataGratis(uid, row, dateInp.value); };
+      // escolher um plano pago limpa a data (pago não tem prazo)
+      planoSel.onchange = function () { if (planoSel.value !== "teste") dateInp.value = ""; lock(); };
       row.querySelector('[data-act="toggle"]').onclick = function () { toggleBlock(uid); };
       row.querySelector('[data-act="save"]').onclick = function () { saveRow(uid, row); };
       row.querySelector('[data-act="plus30"]').onclick = function () { shiftValidade(uid, row, 30); };
@@ -218,6 +227,7 @@
   async function saveRow(uid, row) {
     var plano = row.querySelector('[data-k="plano"]').value;
     var validade = row.querySelector('[data-k="validade"]').value || null;
+    if (validade) plano = "teste";   // com data = Grátis (só o Grátis expira); pago = sem data
     var btn = row.querySelector('[data-act="save"]'); btn.textContent = "…";
     var r = await client().from("licencas").update({ plano: plano, validade: validade }).eq("user_id", uid).select();
     if (r.error) { btn.textContent = "Salvar"; alert("Falha: " + r.error.message); return; }
@@ -233,10 +243,18 @@
     base.setDate(base.getDate() + dias);
     var novaVal = base.toISOString().slice(0, 10);
     var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = novaVal;
-    var r = await client().from("licencas").update({ validade: novaVal }).eq("user_id", uid).select();
+    var r = await client().from("licencas").update({ validade: novaVal, plano: "teste" }).eq("user_id", uid).select();   // dar prazo = Grátis
     if (r.error) { alert("Falha: " + r.error.message); return; }
     if (!r.data || !r.data.length) { alert("Nada gravado (linha não encontrada)."); return; }
-    l.validade = novaVal;
+    l.validade = novaVal; l.plano = "teste";
+    renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
+  }
+  // setDataGratis: escolher a data no input já grava {Grátis + validade} na hora (sobe automático pro app).
+  async function setDataGratis(uid, row, dateVal) {
+    var r = await client().from("licencas").update({ plano: "teste", validade: dateVal }).eq("user_id", uid).select();
+    if (r.error) { alert("Falha: " + r.error.message); return; }
+    if (!r.data || !r.data.length) { alert("Nada gravado (linha não encontrada)."); return; }
+    var l = byUid(uid); if (l) { l.plano = "teste"; l.validade = dateVal; }
     renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
   }
   // setVitalicio: remove a validade (null = nunca expira)
