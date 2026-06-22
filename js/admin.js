@@ -101,9 +101,15 @@
   }
   function renderTable(filter) {
     var f = (filter || "").trim().toLowerCase();
-    var rows = _all.filter(function (l) { return !f || String(l.email || "").toLowerCase().indexOf(f) >= 0 || String(l.nome || "").toLowerCase().indexOf(f) >= 0; });
+    var rows = _all.filter(function (l) {
+      if (!f) return true;
+      var fd = f.replace(/\D/g, "");
+      return String(l.email || "").toLowerCase().indexOf(f) >= 0
+        || String(l.nome || "").toLowerCase().indexOf(f) >= 0
+        || (!!fd && String(l.telefone || "").replace(/\D/g, "").indexOf(fd) >= 0);
+    });
     var ativos = _all.filter(function (l) { return l.status !== "bloqueado"; }).length;
-    var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome ou email…" value="' + esc(filter || "") + '">'
+    var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome, email ou telefone…" value="' + esc(filter || "") + '">'
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
       + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div><div class="ad-rows">';
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
@@ -116,8 +122,9 @@
       var planoLbl = { teste: "Novo", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
       var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
       var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
+      var telTxt = (l.telefone && String(l.telefone).trim()) ? '<div class="ad-tel">📱 ' + esc(l.telefone) + '</div>' : '';
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
-        + '<div><div class="ad-name">' + nomeTxt + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>'
+        + '<div><div class="ad-name">' + nomeTxt + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt
         + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
         + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '<span>· vitalício</span>') + '</div></div>'
         + '<div class="ad-controls">'
