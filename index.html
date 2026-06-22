@@ -40,6 +40,34 @@
     .ad-email { font-weight: 600; font-size: 12.5px; color: var(--muted); word-break: break-all; margin-top: 1px; }
     .ad-tel { font-weight: 600; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
     .ad-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    /* pill de dias restantes */
+    .ad-dias { font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+    .dias-ok { color: #4ade80; background: rgba(21,194,102,.14); }
+    .dias-poucos { color: #fbbf24; background: rgba(251,191,36,.16); }
+    .dias-venc { color: #ff6b6b; background: rgba(229,72,77,.16); }
+    .dias-vit { color: #c084fc; background: rgba(168,85,247,.16); }
+    /* abas Contas / Uso */
+    .ad-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .ad-tab { flex: 1; background: var(--card-2); border: 1px solid var(--line); color: var(--muted); font-family: var(--font); font-weight: 800; font-size: 14px; padding: 11px; border-radius: 12px; cursor: pointer; }
+    .ad-tab.on { background: rgba(21,194,102,.16); border-color: rgba(21,194,102,.4); color: var(--accent, #15c266); }
+    .ad-tab:active { transform: scale(.98); }
+    /* dash de uso */
+    .uso-card { margin-bottom: 14px; }
+    .uso-h { font-weight: 800; font-size: 15px; color: var(--ink); margin-bottom: 14px; }
+    .uso-sub { font-weight: 600; font-size: 11.5px; color: var(--muted); }
+    .uso-chart { display: flex; align-items: flex-end; gap: 5px; height: 150px; padding-top: 8px; }
+    .uso-bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; min-width: 0; }
+    .uso-bar-fill { width: 100%; max-width: 26px; background: linear-gradient(180deg, #19d17a, #15c266); border-radius: 6px 6px 0 0; min-height: 2px; transition: height .3s; }
+    .uso-bar-n { font-size: 10px; font-weight: 800; color: var(--ink); height: 12px; }
+    .uso-bar-d { font-size: 9px; color: var(--muted); white-space: nowrap; }
+    /* ranking */
+    .uso-rank { display: flex; flex-direction: column; gap: 8px; }
+    .uso-rk { display: flex; align-items: center; gap: 10px; }
+    .uso-rk-pos { width: 28px; text-align: center; font-weight: 800; font-size: 14px; color: var(--ink); flex: 0 0 auto; }
+    .uso-rk-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .uso-rk-nome { font-weight: 700; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .uso-rk-bar { height: 5px; border-radius: 999px; background: linear-gradient(90deg, #19d17a, #15c266); }
+    .uso-rk-n { flex: 0 0 auto; font-weight: 800; font-size: 13px; color: var(--accent, #15c266); min-width: 28px; text-align: right; }
     .ad-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
     .pill { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }

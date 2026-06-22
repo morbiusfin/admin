@@ -13,7 +13,27 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]); }); };
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
-  var _all = [], _email = "", _refreshT = null;
+  var _all = [], _email = "", _refreshT = null, _tab = "contas";
+  function content() { return document.getElementById("adContent"); }
+  // dias restantes da licença (pro admin saber quanto falta)
+  function diasInfo(v) {
+    if (!v) return { txt: "vitalício", cls: "dias-vit" };
+    var d = new Date(v); if (isNaN(d.getTime())) return { txt: "", cls: "" };
+    var dias = Math.ceil((d - new Date()) / 86400000);
+    if (dias < 0) return { txt: "vencido", cls: "dias-venc" };
+    if (dias === 0) return { txt: "vence hoje", cls: "dias-venc" };
+    if (dias === 1) return { txt: "falta 1 dia", cls: "dias-poucos" };
+    return { txt: "faltam " + dias + " dias", cls: dias <= 3 ? "dias-poucos" : "dias-ok" };
+  }
+  // 2 abas: Contas (lista) e Uso (dash + ranking)
+  function renderShell() {
+    view().innerHTML = '<div class="ad-tabs">'
+      + '<button type="button" class="ad-tab' + (_tab === "contas" ? " on" : "") + '" data-tab="contas">📋 Contas</button>'
+      + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
+      + '</div><div id="adContent"></div>';
+    view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
+    if (_tab === "uso") renderUsage(); else renderTable("");
+  }
   function adToast(msg) {
     var t = document.getElementById("adToast");
     if (!t) { t = document.createElement("div"); t.id = "adToast"; t.className = "ad-toast"; document.body.appendChild(t); }
@@ -33,8 +53,7 @@
         if (JSON.stringify(q.data) === JSON.stringify(_all)) return;     // nada mudou → sem flicker
         var novos = q.data.filter(function (n) { return !_all.some(function (o) { return o.email === n.email; }); });
         _all = q.data;
-        var s = document.getElementById("adSearch");
-        renderTable(s ? s.value : "");
+        if (_tab === "contas") { var s = document.getElementById("adSearch"); renderTable(s ? s.value : ""); }   // re-renderiza só a aba de contas (não atrapalha a aba Uso)
         if (novos.length) adToast("🔔 " + (novos.length === 1 ? "Nova conta: " + (novos[0].email || "(sem email)") : novos.length + " novas contas"));
       } catch (e) {}
     }, 5000);   // a cada 5s: conta nova aparece sozinha + alerta
@@ -96,7 +115,7 @@
       return;
     }
     _all = q.data || [];
-    renderTable("");
+    renderShell();
     startAutoRefresh();
   }
   function renderTable(filter) {
@@ -126,7 +145,7 @@
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-name">' + nomeTxt + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt
         + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
-        + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '<span>· vitalício</span>') + '</div></div>'
+        + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '') + (function () { var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>'; })() + '</div></div>'
         + '<div class="ad-controls">'
         + '<select data-k="plano" title="Plano">' + planos + '</select>'
         + '<label class="ad-datelbl">Expira (bloqueia ao vencer)<input type="date" data-k="validade" title="Data em que o acesso expira e bloqueia. Vazio = vitalício." value="' + (l.validade ? String(l.validade).slice(0, 10) : "") + '"></label>'
@@ -138,7 +157,7 @@
         + '</div></div>';
     });
     html += '</div>';
-    view().innerHTML = html;
+    var c = content(); if (c) c.innerHTML = html; else view().innerHTML = html;
     var s = $("#adSearch"); if (s) s.oninput = function (e) { renderKeepFocus(e.target.value); };
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
     document.querySelectorAll(".ad-row").forEach(function (row) {
@@ -153,6 +172,40 @@
   var _searchT = null;
   function renderKeepFocus(v) { clearTimeout(_searchT); _searchT = setTimeout(function () { renderTable(v); var s = $("#adSearch"); if (s) { s.focus(); try { s.setSelectionRange(s.value.length, s.value.length); } catch (e) {} } }, 130); }
   function byUid(uid) { return _all.find(function (x) { return x.user_id === uid; }); }
+  // Aba USO: dash de acessos por dia (14d) + ranking de quem mais acessa (por nome). Lê a tabela 'acessos'.
+  async function renderUsage() {
+    var c = content(); if (!c) return;
+    c.innerHTML = '<div class="ad-card"><div class="ad-empty">Carregando uso…</div></div>';
+    var since = new Date(Date.now() - 30 * 86400000).toISOString();
+    var q = await client().from("acessos").select("user_id, ts").gte("ts", since).order("ts", { ascending: true });
+    if (q.error) {
+      c.innerHTML = '<div class="ad-card"><div class="ad-empty">📈 Registro de acessos ainda não ativo.<br><br>Rode o SQL <b>usage.sql</b> no Supabase pra ligar o dash.<br><span style="opacity:.6">' + esc(q.error.message) + '</span></div></div>';
+      return;
+    }
+    var rows = q.data || [];
+    var days = [], map = {};
+    for (var i = 13; i >= 0; i--) { var dt = new Date(Date.now() - i * 86400000); var key = dt.toISOString().slice(0, 10); days.push(key); map[key] = 0; }
+    var perUser = {};
+    rows.forEach(function (r) { var key = String(r.ts).slice(0, 10); if (key in map) map[key]++; perUser[r.user_id] = (perUser[r.user_id] || 0) + 1; });
+    var max = days.reduce(function (m, k) { return Math.max(m, map[k]); }, 1);
+    var bars = days.map(function (k) {
+      var v = map[k]; var h = v ? Math.max(Math.round(v / max * 100), 7) : 0; var d = k.slice(8, 10) + "/" + k.slice(5, 7);
+      return '<div class="uso-bar" title="' + d + ': ' + v + '"><div class="uso-bar-n">' + (v || "") + '</div><div class="uso-bar-fill" style="height:' + h + '%"></div><div class="uso-bar-d">' + d + '</div></div>';
+    }).join("");
+    var rank = Object.keys(perUser).map(function (uid) { var l = byUid(uid) || {}; return { nome: (l.nome && String(l.nome).trim()) || l.email || "(sem nome)", n: perUser[uid] }; })
+      .sort(function (a, b) { return b.n - a.n; }).slice(0, 15);
+    var rankMax = rank.length ? rank[0].n : 1;
+    var html = '<div class="ad-card uso-card"><div class="uso-h">📈 Acessos por dia <span class="uso-sub">últimos 14 dias · ' + rows.length + ' em 30d</span></div><div class="uso-chart">' + bars + '</div></div>';
+    html += '<div class="ad-card uso-card"><div class="uso-h">🏆 Quem mais acessa</div><div class="uso-rank">';
+    if (!rank.length) html += '<div class="ad-empty">Sem acessos registrados ainda.</div>';
+    rank.forEach(function (r, i) {
+      var medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1) + "º";
+      var w = Math.max(Math.round(r.n / rankMax * 100), 8);
+      html += '<div class="uso-rk"><span class="uso-rk-pos">' + medal + '</span><div class="uso-rk-mid"><span class="uso-rk-nome">' + esc(r.nome) + '</span><span class="uso-rk-bar" style="width:' + w + '%"></span></div><span class="uso-rk-n">' + r.n + '</span></div>';
+    });
+    html += '</div></div>';
+    c.innerHTML = html;
+  }
   // TODAS as escritas por USER_ID (PK, mesma chave que o APP lê) + .select() pra confirmar que mudou.
   async function toggleBlock(uid) {
     var l = byUid(uid); if (!l) return;
