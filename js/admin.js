@@ -267,14 +267,16 @@
     var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = "";
     renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
   }
-  // Máscara de telefone +55 (DD) NNNNN-NNNN (tira o 55 do país se vier colado; não trava no DDD 55).
-  function maskTel(v) {
-    var d = (v || "").replace(/\D/g, ""); if (d.length > 11 && d.indexOf("55") === 0) d = d.slice(2); d = d.slice(0, 11);
-    if (!d) return ""; var ddd = d.slice(0, 2), nn = d.slice(2);
-    var out = "+55 (" + ddd; if (d.length >= 2) out += ")";
-    if (nn.length) { out += " " + nn.slice(0, 5); if (nn.length > 5) out += "-" + nn.slice(5, 9); }
+  // Telefone: o +55 é FIXO fora do input → o input guarda só DDD+número, sem código de país, sem strip
+  // (não trava no DDD 55) e sem separador no fim até ter dígito depois (backspace apaga dígito a dígito).
+  function maskTelLocal(v) {
+    var d = (v || "").replace(/\D/g, "").slice(0, 11); if (!d) return "";
+    if (d.length <= 2) return "(" + d;
+    var out = "(" + d.slice(0, 2) + ") " + d.slice(2, 7);
+    if (d.length > 7) out += "-" + d.slice(7, 11);
     return out;
   }
+  function telStripDDI(v) { return (v || "").replace(/^\s*\+?55\s*/, ""); }   // tira o "+55 " do valor salvo
   // POPUP ÚNICA: completa nome/telefone das contas antigas que ficaram vazias (antes da regra obrigatória).
   // Aparece 1x só (flag em localStorage). Depois de preencher e salvar (ou "Agora não"), não volta.
   function maybeFixContato() {
@@ -286,7 +288,7 @@
       return '<div class="fc-row" data-uid="' + esc(l.user_id) + '">'
         + '<div class="fc-em">' + esc(l.email || "(sem email)") + '</div>'
         + '<input class="fc-nome" placeholder="Nome" value="' + esc(l.nome || "") + '">'
-        + '<input class="fc-tel" inputmode="numeric" placeholder="+55 (00) 00000-0000" value="' + esc(l.telefone || "") + '">'
+        + '<div class="fc-telwrap"><span class="fc-ddi">+55</span><input class="fc-tel" inputmode="numeric" placeholder="(00) 00000-0000" value="' + esc(maskTelLocal(telStripDDI(l.telefone || ""))) + '"></div>'
         + '</div>';
     }).join("");
     var ov = document.createElement("div"); ov.id = "fcOv"; ov.className = "fc-ov";
@@ -295,7 +297,7 @@
       + '<div class="fc-list">' + rows + '</div>'
       + '<div class="fc-acts"><button type="button" class="btn ghost" id="fcLater">Agora não</button><button type="button" class="btn primary" id="fcSave">Salvar tudo</button></div></div>';
     document.body.appendChild(ov);
-    ov.querySelectorAll(".fc-tel").forEach(function (t) { t.oninput = function () { t.value = maskTel(t.value); }; });
+    ov.querySelectorAll(".fc-tel").forEach(function (t) { t.oninput = function () { t.value = maskTelLocal(t.value); }; });
     var done = function () { try { localStorage.setItem("mfadmin.fixContato.v1", "1"); } catch (e) {} try { ov.remove(); } catch (e) {} };
     ov.querySelector("#fcLater").onclick = done;
     ov.querySelector("#fcSave").onclick = async function () {
@@ -304,7 +306,8 @@
       for (var i = 0; i < rws.length; i++) {
         var r = rws[i], uid = r.dataset.uid;
         var nome = (r.querySelector(".fc-nome").value || "").trim();
-        var tel = (r.querySelector(".fc-tel").value || "").trim();
+        var telD = (r.querySelector(".fc-tel").value || "").replace(/\D/g, "").slice(0, 11);
+        var tel = telD ? "+55 " + maskTelLocal(telD) : "";   // monta o full só na hora de salvar
         var patch = {}; if (nome) patch.nome = nome; if (tel) patch.telefone = tel;
         if (!Object.keys(patch).length) continue;
         try { var rr = await client().from("licencas").update(patch).eq("user_id", uid).select(); if (!rr.error && rr.data && rr.data.length) { var l = byUid(uid); if (l) Object.assign(l, patch); n++; } } catch (e) {}
