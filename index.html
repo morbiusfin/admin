@@ -68,6 +68,17 @@
     .uso-rk-nome { font-weight: 700; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .uso-rk-bar { height: 5px; border-radius: 999px; background: linear-gradient(90deg, #19d17a, #15c266); }
     .uso-rk-n { flex: 0 0 auto; font-weight: 800; font-size: 13px; color: var(--accent, #15c266); min-width: 28px; text-align: right; }
+    /* popup unica: completar nome/telefone dos cadastros antigos */
+    .fc-ov { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 18px; }
+    .fc-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; max-width: 480px; width: 100%; max-height: 86vh; overflow: auto; }
+    .fc-h { font-weight: 800; font-size: 17px; color: var(--ink); }
+    .fc-sub { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
+    .fc-list { display: flex; flex-direction: column; gap: 12px; }
+    .fc-row { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+    .fc-em { font-size: 12.5px; color: var(--muted); word-break: break-all; }
+    .fc-row input { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; }
+    .fc-acts { display: flex; gap: 10px; margin-top: 16px; }
+    .fc-acts .btn { flex: 1; }
     .ad-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
     .pill { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }

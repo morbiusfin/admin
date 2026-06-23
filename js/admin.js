@@ -120,6 +120,7 @@
     _all = q.data || [];
     renderShell();
     startAutoRefresh();
+    try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
   }
   function renderTable(filter) {
     var f = (filter || "").trim().toLowerCase();
@@ -166,14 +167,9 @@
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
       var dateInp = row.querySelector('[data-k="validade"]');
-      var planoSel = row.querySelector('[data-k="plano"]');
-      // REGRA: data definida = plano GRÁTIS (só o Grátis expira). Plano pago = sem data (vitalício).
-      function lock() { if (dateInp.value) { planoSel.value = "teste"; planoSel.disabled = true; } else { planoSel.disabled = false; } }
-      lock();
-      // mudar a data → sobe AUTOMÁTICO como Grátis (reflete no app do usuário na hora)
-      dateInp.onchange = function () { lock(); if (dateInp.value) setDataGratis(uid, row, dateInp.value); };
-      // escolher um plano pago limpa a data (pago não tem prazo)
-      planoSel.onchange = function () { if (planoSel.value !== "teste") dateInp.value = ""; lock(); };
+      // FLEXÍVEL: QUALQUER plano pode ter (ou não) uma data de expiração — plano e data são independentes.
+      // Mudar a data salva na hora MANTENDO o plano escolhido (reflete no app do usuário em segundos).
+      dateInp.onchange = function () { setData(uid, row); };
       row.querySelector('[data-act="toggle"]').onclick = function () { toggleBlock(uid); };
       row.querySelector('[data-act="save"]').onclick = function () { saveRow(uid, row); };
       row.querySelector('[data-act="plus30"]').onclick = function () { shiftValidade(uid, row, 30); };
@@ -229,8 +225,7 @@
   }
   async function saveRow(uid, row) {
     var plano = row.querySelector('[data-k="plano"]').value;
-    var validade = row.querySelector('[data-k="validade"]').value || null;
-    if (validade) plano = "teste";   // com data = Grátis (só o Grátis expira); pago = sem data
+    var validade = row.querySelector('[data-k="validade"]').value || null;   // plano e data independentes (qualquer plano pode ter data)
     var btn = row.querySelector('[data-act="save"]'); btn.textContent = "…";
     var r = await client().from("licencas").update({ plano: plano, validade: validade }).eq("user_id", uid).select();
     if (r.error) { btn.textContent = "Salvar"; alert("Falha: " + r.error.message); return; }
@@ -246,18 +241,20 @@
     base.setDate(base.getDate() + dias);
     var novaVal = base.toISOString().slice(0, 10);
     var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = novaVal;
-    var r = await client().from("licencas").update({ validade: novaVal, plano: "teste" }).eq("user_id", uid).select();   // dar prazo = Grátis
+    var r = await client().from("licencas").update({ validade: novaVal }).eq("user_id", uid).select();   // só estende o prazo; mantém o plano atual
     if (r.error) { alert("Falha: " + r.error.message); return; }
     if (!r.data || !r.data.length) { alert("Nada gravado (linha não encontrada)."); return; }
-    l.validade = novaVal; l.plano = "teste";
+    l.validade = novaVal;
     renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
   }
-  // setDataGratis: escolher a data no input já grava {Grátis + validade} na hora (sobe automático pro app).
-  async function setDataGratis(uid, row, dateVal) {
-    var r = await client().from("licencas").update({ plano: "teste", validade: dateVal }).eq("user_id", uid).select();
+  // setData: escolher a data no input já grava {plano atual + validade} na hora (qualquer plano pode ter data).
+  async function setData(uid, row) {
+    var plano = row.querySelector('[data-k="plano"]').value;
+    var dateVal = row.querySelector('[data-k="validade"]').value || null;
+    var r = await client().from("licencas").update({ plano: plano, validade: dateVal }).eq("user_id", uid).select();
     if (r.error) { alert("Falha: " + r.error.message); return; }
     if (!r.data || !r.data.length) { alert("Nada gravado (linha não encontrada)."); return; }
-    var l = byUid(uid); if (l) { l.plano = "teste"; l.validade = dateVal; }
+    var l = byUid(uid); if (l) { l.plano = plano; l.validade = dateVal; }
     renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
   }
   // setVitalicio: remove a validade (null = nunca expira)
@@ -269,6 +266,51 @@
     if (l) l.validade = null;
     var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = "";
     renderTable(document.getElementById("adSearch") ? document.getElementById("adSearch").value : "");
+  }
+  // Máscara de telefone +55 (DD) NNNNN-NNNN (tira o 55 do país se vier colado; não trava no DDD 55).
+  function maskTel(v) {
+    var d = (v || "").replace(/\D/g, ""); if (d.length > 11 && d.indexOf("55") === 0) d = d.slice(2); d = d.slice(0, 11);
+    if (!d) return ""; var ddd = d.slice(0, 2), nn = d.slice(2);
+    var out = "+55 (" + ddd; if (d.length >= 2) out += ")";
+    if (nn.length) { out += " " + nn.slice(0, 5); if (nn.length > 5) out += "-" + nn.slice(5, 9); }
+    return out;
+  }
+  // POPUP ÚNICA: completa nome/telefone das contas antigas que ficaram vazias (antes da regra obrigatória).
+  // Aparece 1x só (flag em localStorage). Depois de preencher e salvar (ou "Agora não"), não volta.
+  function maybeFixContato() {
+    try { if (localStorage.getItem("mfadmin.fixContato.v1")) return; } catch (e) {}
+    var faltando = _all.filter(function (l) { return !((l.nome || "").trim()) || !((l.telefone || "").trim()); });
+    if (!faltando.length) { try { localStorage.setItem("mfadmin.fixContato.v1", "1"); } catch (e) {} return; }
+    if (document.getElementById("fcOv")) return;
+    var rows = faltando.map(function (l) {
+      return '<div class="fc-row" data-uid="' + esc(l.user_id) + '">'
+        + '<div class="fc-em">' + esc(l.email || "(sem email)") + '</div>'
+        + '<input class="fc-nome" placeholder="Nome" value="' + esc(l.nome || "") + '">'
+        + '<input class="fc-tel" inputmode="numeric" placeholder="+55 (00) 00000-0000" value="' + esc(l.telefone || "") + '">'
+        + '</div>';
+    }).join("");
+    var ov = document.createElement("div"); ov.id = "fcOv"; ov.className = "fc-ov";
+    ov.innerHTML = '<div class="fc-card"><div class="fc-h">Complete os cadastros antigos</div>'
+      + '<div class="fc-sub">' + faltando.length + ' conta(s) sem nome ou telefone. Preencha o que souber e salve — esta janela aparece só esta vez.</div>'
+      + '<div class="fc-list">' + rows + '</div>'
+      + '<div class="fc-acts"><button type="button" class="btn ghost" id="fcLater">Agora não</button><button type="button" class="btn primary" id="fcSave">Salvar tudo</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelectorAll(".fc-tel").forEach(function (t) { t.oninput = function () { t.value = maskTel(t.value); }; });
+    var done = function () { try { localStorage.setItem("mfadmin.fixContato.v1", "1"); } catch (e) {} try { ov.remove(); } catch (e) {} };
+    ov.querySelector("#fcLater").onclick = done;
+    ov.querySelector("#fcSave").onclick = async function () {
+      var btn = this; btn.disabled = true; btn.textContent = "Salvando…";
+      var rws = ov.querySelectorAll(".fc-row"), n = 0;
+      for (var i = 0; i < rws.length; i++) {
+        var r = rws[i], uid = r.dataset.uid;
+        var nome = (r.querySelector(".fc-nome").value || "").trim();
+        var tel = (r.querySelector(".fc-tel").value || "").trim();
+        var patch = {}; if (nome) patch.nome = nome; if (tel) patch.telefone = tel;
+        if (!Object.keys(patch).length) continue;
+        try { var rr = await client().from("licencas").update(patch).eq("user_id", uid).select(); if (!rr.error && rr.data && rr.data.length) { var l = byUid(uid); if (l) Object.assign(l, patch); n++; } } catch (e) {}
+      }
+      done(); renderShell(); adToast(n + " cadastro(s) atualizado(s)");
+    };
   }
   boot();
 })();
