@@ -27,6 +27,11 @@
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
   var _all = [], _email = "", _refreshT = null, _tab = "contas";
+  // TESTE GRÁTIS (dias) p/ contas novas — fonte única na tabela 'config'. O app lê; aqui edita.
+  var _trialCfg = 7;
+  async function loadTrialCfg() {
+    try { var q = await client().from("config").select("v").eq("k", "trial_days").limit(1); if (!q.error && q.data && q.data[0]) { var n = parseInt(q.data[0].v, 10); if (n >= 0 && n <= 365) _trialCfg = n; } } catch (e) {}
+  }
   function content() { return document.getElementById("adContent"); }
   // dias restantes da licença (pro admin saber quanto falta)
   function diasInfo(v) {
@@ -131,6 +136,7 @@
       return;
     }
     _all = q.data || [];
+    try { await loadTrialCfg(); } catch (e) {}   // dias do teste grátis (pro controle no topo das Contas)
     renderShell();
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
@@ -148,7 +154,9 @@
     var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome, email ou telefone…" value="' + esc(filter || "") + '">'
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
       + '<button class="btn ghost sm" id="adNotify">🔔 Notificar</button>'
-      + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div><div class="ad-rows">';
+      + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div>'
+      + '<div class="ad-trial">🎁 <b>Teste grátis</b> p/ contas novas: <input id="adTrialDays" type="number" min="0" max="365" inputmode="numeric" value="' + _trialCfg + '"> dias <button type="button" class="btn ghost sm" id="adTrialSave">Salvar</button><span id="adTrialMsg" class="ad-trial-msg"></span></div>'
+      + '<div class="ad-rows">';
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
     rows.forEach(function (l) {
       var bloq = l.status === "bloqueado";
@@ -179,6 +187,19 @@
     var s = $("#adSearch"); if (s) s.oninput = function (e) { renderKeepFocus(e.target.value); };
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
     var nt = $("#adNotify"); if (nt) nt.onclick = openNotify;
+    var tsv = $("#adTrialSave");
+    if (tsv) tsv.onclick = async function () {
+      var n = parseInt(($("#adTrialDays") || {}).value, 10);
+      var tm = $("#adTrialMsg");
+      if (!(n >= 0 && n <= 365)) { if (tm) { tm.textContent = "use 0 a 365"; tm.className = "ad-trial-msg bad"; } return; }
+      tsv.disabled = true; tsv.textContent = "…";
+      var r = await client().from("config").upsert({ k: "trial_days", v: String(n) }).select();
+      tsv.disabled = false; tsv.textContent = "Salvar";
+      if (r.error) { if (tm) { tm.textContent = "Erro — rodou o SQL trial-config?"; tm.className = "ad-trial-msg bad"; } return; }
+      _trialCfg = n;
+      if (tm) { tm.textContent = "✓ salvo · vale pras próximas contas"; tm.className = "ad-trial-msg ok"; }
+      adToast("🎁 Teste grátis: " + n + " dia(s)");
+    };
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
       var dateInp = row.querySelector('[data-k="validade"]');
