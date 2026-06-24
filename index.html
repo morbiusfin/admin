@@ -96,6 +96,15 @@
     .nt-mid { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
     .nt-nome { font-weight: 700; font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .nt-em { font-size: 12px; color: var(--muted); word-break: break-all; }
+    .nt-lbl { display: block; font-size: 12px; font-weight: 800; color: var(--muted); margin: 12px 0 5px; }
+    .nt-titulo { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; }
+    .nt-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .nt-chip { border: 1px solid var(--line); background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 12.5px; font-weight: 700; padding: 7px 11px; border-radius: 999px; cursor: pointer; }
+    .nt-chip:active { transform: scale(.96); }
+    .nt-chip.on { border-color: rgba(21,194,102,.6); background: rgba(21,194,102,.14); color: var(--accent, #15c266); }
+    .nt-chip-blank { border-style: dashed; }
+    .nt-corpo { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; }
+    .nt-count { text-align: right; font-size: 11px; color: var(--muted); margin-top: 3px; }
     .ad-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
     .pill { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }

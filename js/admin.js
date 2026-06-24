@@ -292,9 +292,19 @@
     return out;
   }
   function telStripDDI(v) { return (v || "").replace(/^\s*\+?55\s*/, ""); }   // tira o "+55 " do valor salvo
-  // POPUP: notificar usuários selecionados sobre despesas a vencer.
-  // O Kaick escolhe a janela de dias + marca quem avisar. A LISTA de despesas é a que cada usuário
-  // cadastrou no próprio app (privacidade: o painel não vê as despesas, só dispara o aviso).
+  // Modelos prontos de recado (criativos). O Kaick escolhe um e edita, ou escreve do zero. Vão pra quem ele marcar.
+  var NT_TEMPLATES = [
+    { lbl: "🥺 Saudade", txt: "Faz tempo que a gente não se vê! Suas contas estão com saudade 🥺💚 Dá um pulinho no MorbiusFin pra deixar tudo em dia." },
+    { lbl: "📊 Organizar", txt: "Que tal 2 minutinhos pra deixar as finanças em dia? 📊 Seu eu do futuro agradece 🙌" },
+    { lbl: "🔔 Contas a vencer", txt: "Você tem contas chegando perto do vencimento 👀 Confere no MorbiusFin pra não pagar juros 💸" },
+    { lbl: "🎯 Metas", txt: "Bora chegar mais perto das suas metas? 🎯 Registra os gastos de hoje no MorbiusFin 🚀" },
+    { lbl: "☀️ Bom dia", txt: "Bom dia! ☀️ Começa o dia no controle: lança seus gastos no MorbiusFin 💚" },
+    { lbl: "🧾 Fim de mês", txt: "Fim de mês chegando! 🧾 Confere como ficou seu saldo no MorbiusFin 📈" },
+    { lbl: "🔥 Sequência", txt: "Não perde o ritmo! 🔥 Faz uns dias que você não registra nada. Bora manter a sequência? 💪" },
+    { lbl: "✨ Novidade", txt: "Tem novidade no MorbiusFin! ✨ Abre o app e dá uma olhada 👀" }
+  ];
+  // POPUP: dispara um RECADO pros usuários marcados. Modelo pronto OU texto livre. O admin SEMPRE chega
+  // (independe do liga/desliga do usuário). O painel não vê dado nenhum da pessoa — só manda a mensagem.
   function openNotify() {
     if (document.getElementById("ntOv")) return;
     var comEmail = _all.filter(function (l) { return (l.email || "").trim(); });
@@ -303,19 +313,39 @@
       return '<label class="nt-row"><input type="checkbox" class="nt-ck" value="' + esc(l.email) + '" checked>'
         + '<span class="nt-mid"><span class="nt-nome">' + nome + '</span><span class="nt-em">' + esc(l.email) + '</span></span></label>';
     }).join("");
+    var chips = NT_TEMPLATES.map(function (t, i) { return '<button type="button" class="nt-chip" data-i="' + i + '">' + esc(t.lbl) + '</button>'; }).join("")
+      + '<button type="button" class="nt-chip nt-chip-blank" data-i="-1">✍️ Escrever a minha</button>';
     var ov = document.createElement("div"); ov.id = "ntOv"; ov.className = "fc-ov";
     ov.innerHTML = '<div class="fc-card nt-card"><button type="button" class="wn-x" id="ntX" aria-label="Fechar">✕</button>'
-      + '<div class="fc-h">🔔 Notificar despesas a vencer</div>'
-      + '<div class="fc-sub">Escolha a janela de dias e marque quem avisar. A lista de despesas é a que cada um cadastrou no próprio app — você só dispara o aviso.</div>'
-      + '<div class="nt-days"><span>Avisar dos próximos</span><input id="ntDias" type="number" min="0" max="60" value="3" inputmode="numeric"><span>dia(s)</span></div>'
+      + '<div class="fc-h">🔔 Enviar recado</div>'
+      + '<div class="fc-sub">Escolha um modelo (dá pra editar) ou escreva o seu, e marque quem vai receber. Esse recado sempre chega — não depende do liga/desliga do usuário.</div>'
+      + '<label class="nt-lbl">Título</label>'
+      + '<input id="ntTitulo" class="nt-titulo" maxlength="60" value="MorbiusFin 🐧">'
+      + '<label class="nt-lbl">Modelos</label>'
+      + '<div class="nt-chips">' + chips + '</div>'
+      + '<label class="nt-lbl">Mensagem</label>'
+      + '<textarea id="ntCorpo" class="nt-corpo" rows="3" maxlength="280" placeholder="Escreva o recado…">' + esc(NT_TEMPLATES[0].txt) + '</textarea>'
+      + '<div class="nt-count"><span id="ntCount">0</span>/280</div>'
       + (comEmail.length ? '<label class="nt-all"><input type="checkbox" id="ntAll" checked> Selecionar todos</label>' : '')
       + '<div class="fc-list nt-list">' + (rows || '<div class="ad-empty">Nenhuma conta com email cadastrado.</div>') + '</div>'
-      + '<div class="fc-acts"><button type="button" class="btn ghost" id="ntCancel">Cancelar</button><button type="button" class="btn primary" id="ntSend"' + (comEmail.length ? '' : ' disabled') + '>Enviar notificação</button></div></div>';
+      + '<div class="fc-acts"><button type="button" class="btn ghost" id="ntCancel">Cancelar</button><button type="button" class="btn primary" id="ntSend"' + (comEmail.length ? '' : ' disabled') + '>Enviar recado</button></div></div>';
     document.body.appendChild(ov);
     var close = function () { try { ov.remove(); } catch (e) {} };
     ov.querySelector("#ntX").onclick = close;
     ov.querySelector("#ntCancel").onclick = close;
     ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+    var corpo = ov.querySelector("#ntCorpo"), count = ov.querySelector("#ntCount");
+    var upd = function () { count.textContent = corpo.value.length; };
+    corpo.oninput = upd; upd();
+    ov.querySelectorAll(".nt-chip").forEach(function (ch) {
+      ch.onclick = function () {
+        ov.querySelectorAll(".nt-chip").forEach(function (x) { x.classList.remove("on"); });
+        ch.classList.add("on");
+        var i = parseInt(ch.dataset.i, 10);
+        corpo.value = (i >= 0 && NT_TEMPLATES[i]) ? NT_TEMPLATES[i].txt : "";
+        upd(); corpo.focus();
+      };
+    });
     var all = ov.querySelector("#ntAll");
     if (all) all.onchange = function () { ov.querySelectorAll(".nt-ck").forEach(function (c) { c.checked = all.checked; }); };
     ov.querySelectorAll(".nt-ck").forEach(function (c) {
@@ -325,23 +355,25 @@
   }
   async function doNotify(ov, btn) {
     var key = getPushKey(); if (!key) return;
-    var dias = Math.max(0, parseInt(ov.querySelector("#ntDias").value, 10) || 0);
+    var titulo = (ov.querySelector("#ntTitulo").value || "").trim() || "MorbiusFin 🐧";
+    var corpo = (ov.querySelector("#ntCorpo").value || "").trim();
+    if (!corpo) { adToast("Escreva a mensagem do recado"); ov.querySelector("#ntCorpo").focus(); return; }
     var emails = []; ov.querySelectorAll(".nt-ck").forEach(function (c) { if (c.checked) emails.push(c.value); });
     if (!emails.length) { adToast("Selecione ao menos um usuário"); return; }
     btn.disabled = true; btn.textContent = "Enviando…";
     try {
       var r = await fetch(PUSH_API + "/admin/notify", {
         method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key },
-        body: JSON.stringify({ emails: emails, dias: dias })
+        body: JSON.stringify({ emails: emails, titulo: titulo, corpo: corpo })
       });
       var j = {}; try { j = await r.json(); } catch (e) {}
-      if (r.status === 401) { try { localStorage.removeItem(PUSH_KEY_LS); } catch (e) {} adToast("Chave do admin inválida — tente de novo"); btn.disabled = false; btn.textContent = "Enviar notificação"; return; }
-      if (!r.ok || !j.ok) { adToast("Falha ao enviar: " + (j.error || ("HTTP " + r.status))); btn.disabled = false; btn.textContent = "Enviar notificação"; return; }
+      if (r.status === 401) { try { localStorage.removeItem(PUSH_KEY_LS); } catch (e) {} adToast("Chave do admin inválida — tente de novo"); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
+      if (!r.ok || !j.ok) { adToast("Falha ao enviar: " + (j.error || ("HTTP " + r.status))); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       try { ov.remove(); } catch (e) {}
       var extra = (j.semInscricao && j.semInscricao.length) ? " · " + j.semInscricao.length + " sem push ativo" : "";
       adToast("🔔 Enviado a " + (j.enviados || 0) + " de " + (j.alvos || emails.length) + extra);
     } catch (e) {
-      adToast("Erro de rede ao enviar"); btn.disabled = false; btn.textContent = "Enviar notificação";
+      adToast("Erro de rede ao enviar"); btn.disabled = false; btn.textContent = "Enviar recado";
     }
   }
   // POPUP ÚNICA: completa nome/telefone das contas antigas que ficaram vazias (antes da regra obrigatória).
