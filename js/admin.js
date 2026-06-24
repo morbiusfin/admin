@@ -195,11 +195,19 @@
   var _searchT = null;
   function renderKeepFocus(v) { clearTimeout(_searchT); _searchT = setTimeout(function () { renderTable(v); var s = $("#adSearch"); if (s) { s.focus(); try { s.setSelectionRange(s.value.length, s.value.length); } catch (e) {} } }, 130); }
   function byUid(uid) { return _all.find(function (x) { return x.user_id === uid; }); }
-  // Aba USO: dash de acessos por dia (14d) + ranking de quem mais acessa (por nome). Lê a tabela 'acessos'.
+  // data curta dd/mm - hh:mm no horário de Brasília
+  function fmtDM(ts) {
+    var d = new Date(ts); if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(", ", " - ");
+  }
+  var USO_SINCE_KEY = "mfadmin.usoSince";   // reset "soft": só conta acessos a partir deste ts (não apaga a tabela)
+  // Aba USO: dash de acessos por dia (14d) + ranking de quem mais acessa (com último acesso) + reset.
   async function renderUsage() {
     var c = content(); if (!c) return;
     c.innerHTML = '<div class="ad-card"><div class="ad-empty">Carregando uso…</div></div>';
-    var since = new Date(Date.now() - 30 * 86400000).toISOString();
+    var resetTs = 0; try { resetTs = +(localStorage.getItem(USO_SINCE_KEY) || 0) || 0; } catch (e) {}
+    var sinceMs = Math.max(Date.now() - 30 * 86400000, resetTs);   // janela = 30d OU desde o reset (o que for mais recente)
+    var since = new Date(sinceMs).toISOString();
     var q = await client().from("acessos").select("user_id, ts").gte("ts", since).order("ts", { ascending: true });
     if (q.error) {
       c.innerHTML = '<div class="ad-card"><div class="ad-empty">📈 Registro de acessos ainda não ativo.<br><br>Rode o SQL <b>usage.sql</b> no Supabase pra ligar o dash.<br><span style="opacity:.6">' + esc(q.error.message) + '</span></div></div>';
@@ -208,26 +216,39 @@
     var rows = q.data || [];
     var days = [], map = {};
     for (var i = 13; i >= 0; i--) { var dt = new Date(Date.now() - i * 86400000); var key = dt.toISOString().slice(0, 10); days.push(key); map[key] = 0; }
-    var perUser = {};
-    rows.forEach(function (r) { var key = String(r.ts).slice(0, 10); if (key in map) map[key]++; perUser[r.user_id] = (perUser[r.user_id] || 0) + 1; });
+    var perUser = {}, lastTs = {};
+    rows.forEach(function (r) {
+      var key = String(r.ts).slice(0, 10); if (key in map) map[key]++;
+      perUser[r.user_id] = (perUser[r.user_id] || 0) + 1;
+      var t = +new Date(r.ts); if (!lastTs[r.user_id] || t > lastTs[r.user_id]) lastTs[r.user_id] = t;   // último acesso por pessoa
+    });
     var max = days.reduce(function (m, k) { return Math.max(m, map[k]); }, 1);
     var bars = days.map(function (k) {
       var v = map[k]; var h = v ? Math.max(Math.round(v / max * 100), 7) : 0; var d = k.slice(8, 10) + "/" + k.slice(5, 7);
       return '<div class="uso-bar" title="' + d + ': ' + v + '"><div class="uso-bar-n">' + (v || "") + '</div><div class="uso-bar-fill" style="height:' + h + '%"></div><div class="uso-bar-d">' + d + '</div></div>';
     }).join("");
-    var rank = Object.keys(perUser).map(function (uid) { var l = byUid(uid) || {}; return { nome: (l.nome && String(l.nome).trim()) || l.email || "(sem nome)", n: perUser[uid] }; })
+    var rank = Object.keys(perUser).map(function (uid) { var l = byUid(uid) || {}; return { nome: (l.nome && String(l.nome).trim()) || l.email || "(sem nome)", n: perUser[uid], last: lastTs[uid] || 0 }; })
       .sort(function (a, b) { return b.n - a.n; }).slice(0, 15);
     var rankMax = rank.length ? rank[0].n : 1;
-    var html = '<div class="ad-card uso-card"><div class="uso-h">📈 Acessos por dia <span class="uso-sub">últimos 14 dias · ' + rows.length + ' em 30d</span></div><div class="uso-chart">' + bars + '</div></div>';
+    var resetNota = resetTs ? ' · desde ' + fmtDM(resetTs) : '';
+    var html = '<div class="ad-card uso-card"><div class="uso-h">📈 Acessos por dia <span class="uso-sub">últimos 14 dias · ' + rows.length + ' registro(s)' + resetNota + '</span><button type="button" class="btn ghost sm" id="usoReset" title="Recomeça a contagem de agora">↺ Resetar</button></div><div class="uso-chart">' + bars + '</div></div>';
     html += '<div class="ad-card uso-card"><div class="uso-h">🏆 Quem mais acessa</div><div class="uso-rank">';
-    if (!rank.length) html += '<div class="ad-empty">Sem acessos registrados ainda.</div>';
+    if (!rank.length) html += '<div class="ad-empty">Sem acessos no período.</div>';
     rank.forEach(function (r, i) {
       var medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1) + "º";
       var w = Math.max(Math.round(r.n / rankMax * 100), 8);
-      html += '<div class="uso-rk"><span class="uso-rk-pos">' + medal + '</span><div class="uso-rk-mid"><span class="uso-rk-nome">' + esc(r.nome) + '</span><span class="uso-rk-bar" style="width:' + w + '%"></span></div><span class="uso-rk-n">' + r.n + '</span></div>';
+      var last = r.last ? '<span class="uso-rk-last">📅 ' + fmtDM(r.last) + '</span>' : '';
+      html += '<div class="uso-rk"><span class="uso-rk-pos">' + medal + '</span><div class="uso-rk-mid"><span class="uso-rk-nome">' + esc(r.nome) + '</span>' + last + '<span class="uso-rk-bar" style="width:' + w + '%"></span></div><span class="uso-rk-n">' + r.n + '</span></div>';
     });
     html += '</div></div>';
     c.innerHTML = html;
+    var rb = document.getElementById("usoReset");
+    if (rb) rb.onclick = function () {
+      if (!window.confirm("Resetar o painel de uso?\n\nA contagem recomeça de AGORA — os acessos anteriores deixam de aparecer aqui. Não apaga nada permanente; é só a visão.")) return;
+      try { localStorage.setItem(USO_SINCE_KEY, String(Date.now())); } catch (e) {}
+      adToast("Uso resetado — contando de agora ↺");
+      renderUsage();
+    };
   }
   // TODAS as escritas por USER_ID (PK, mesma chave que o APP lê) + .select() pra confirmar que mudou.
   async function toggleBlock(uid) {
