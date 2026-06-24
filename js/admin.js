@@ -6,6 +6,19 @@
   var SB_URL = "https://fyjzrsmfeokdkhboeopc.supabase.co";
   var SB_KEY = "sb_publishable_oUTz-QGMaaMo42n0hXJMlw_JVUst6Om";
   var sb = null;
+  // Worker de push (Cloudflare). O /admin/notify exige a ADMIN_KEY (segredo do worker) no header x-admin-key.
+  // A chave NÃO fica no código: o admin digita 1x e ela fica salva só neste aparelho.
+  var PUSH_API = "https://financas-push.kaickjhon.workers.dev";
+  var PUSH_KEY_LS = "mfadmin.pushKey";
+  function getPushKey() {
+    var k = ""; try { k = localStorage.getItem(PUSH_KEY_LS) || ""; } catch (e) {}
+    if (!k) {
+      k = (window.prompt("Chave de notificação (ADMIN_KEY do worker de push).\nFica salva só neste aparelho.") || "").trim();
+      if (!k) return null;
+      try { localStorage.setItem(PUSH_KEY_LS, k); } catch (e) {}
+    }
+    return k;
+  }
   // storageKey próprio ("mfadmin-auth"): app e admin ficam no MESMO origin (morbiusfin.github.io) e dividem
   // localStorage; sem isso a sessão do admin sobrescreveria a do app (e vice-versa). Isolado, um não derruba o outro.
   function client() { if (sb) return sb; if (!window.supabase || !window.supabase.createClient) return null; sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "mfadmin-auth" } }); return sb; }
@@ -134,6 +147,7 @@
     var ativos = _all.filter(function (l) { return l.status !== "bloqueado"; }).length;
     var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome, email ou telefone…" value="' + esc(filter || "") + '">'
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
+      + '<button class="btn ghost sm" id="adNotify">🔔 Notificar</button>'
       + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div><div class="ad-rows">';
     if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
     rows.forEach(function (l) {
@@ -164,6 +178,7 @@
     var c = content(); if (c) c.innerHTML = html; else view().innerHTML = html;
     var s = $("#adSearch"); if (s) s.oninput = function (e) { renderKeepFocus(e.target.value); };
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
+    var nt = $("#adNotify"); if (nt) nt.onclick = openNotify;
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
       var dateInp = row.querySelector('[data-k="validade"]');
@@ -277,6 +292,58 @@
     return out;
   }
   function telStripDDI(v) { return (v || "").replace(/^\s*\+?55\s*/, ""); }   // tira o "+55 " do valor salvo
+  // POPUP: notificar usuários selecionados sobre despesas a vencer.
+  // O Kaick escolhe a janela de dias + marca quem avisar. A LISTA de despesas é a que cada usuário
+  // cadastrou no próprio app (privacidade: o painel não vê as despesas, só dispara o aviso).
+  function openNotify() {
+    if (document.getElementById("ntOv")) return;
+    var comEmail = _all.filter(function (l) { return (l.email || "").trim(); });
+    var rows = comEmail.map(function (l) {
+      var nome = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
+      return '<label class="nt-row"><input type="checkbox" class="nt-ck" value="' + esc(l.email) + '" checked>'
+        + '<span class="nt-mid"><span class="nt-nome">' + nome + '</span><span class="nt-em">' + esc(l.email) + '</span></span></label>';
+    }).join("");
+    var ov = document.createElement("div"); ov.id = "ntOv"; ov.className = "fc-ov";
+    ov.innerHTML = '<div class="fc-card nt-card"><button type="button" class="wn-x" id="ntX" aria-label="Fechar">✕</button>'
+      + '<div class="fc-h">🔔 Notificar despesas a vencer</div>'
+      + '<div class="fc-sub">Escolha a janela de dias e marque quem avisar. A lista de despesas é a que cada um cadastrou no próprio app — você só dispara o aviso.</div>'
+      + '<div class="nt-days"><span>Avisar dos próximos</span><input id="ntDias" type="number" min="0" max="60" value="3" inputmode="numeric"><span>dia(s)</span></div>'
+      + (comEmail.length ? '<label class="nt-all"><input type="checkbox" id="ntAll" checked> Selecionar todos</label>' : '')
+      + '<div class="fc-list nt-list">' + (rows || '<div class="ad-empty">Nenhuma conta com email cadastrado.</div>') + '</div>'
+      + '<div class="fc-acts"><button type="button" class="btn ghost" id="ntCancel">Cancelar</button><button type="button" class="btn primary" id="ntSend"' + (comEmail.length ? '' : ' disabled') + '>Enviar notificação</button></div></div>';
+    document.body.appendChild(ov);
+    var close = function () { try { ov.remove(); } catch (e) {} };
+    ov.querySelector("#ntX").onclick = close;
+    ov.querySelector("#ntCancel").onclick = close;
+    ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+    var all = ov.querySelector("#ntAll");
+    if (all) all.onchange = function () { ov.querySelectorAll(".nt-ck").forEach(function (c) { c.checked = all.checked; }); };
+    ov.querySelectorAll(".nt-ck").forEach(function (c) {
+      c.onchange = function () { if (!all) return; var todos = Array.prototype.every.call(ov.querySelectorAll(".nt-ck"), function (x) { return x.checked; }); all.checked = todos; };
+    });
+    var send = ov.querySelector("#ntSend"); if (send) send.onclick = function () { doNotify(ov, this); };
+  }
+  async function doNotify(ov, btn) {
+    var key = getPushKey(); if (!key) return;
+    var dias = Math.max(0, parseInt(ov.querySelector("#ntDias").value, 10) || 0);
+    var emails = []; ov.querySelectorAll(".nt-ck").forEach(function (c) { if (c.checked) emails.push(c.value); });
+    if (!emails.length) { adToast("Selecione ao menos um usuário"); return; }
+    btn.disabled = true; btn.textContent = "Enviando…";
+    try {
+      var r = await fetch(PUSH_API + "/admin/notify", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key },
+        body: JSON.stringify({ emails: emails, dias: dias })
+      });
+      var j = {}; try { j = await r.json(); } catch (e) {}
+      if (r.status === 401) { try { localStorage.removeItem(PUSH_KEY_LS); } catch (e) {} adToast("Chave do admin inválida — tente de novo"); btn.disabled = false; btn.textContent = "Enviar notificação"; return; }
+      if (!r.ok || !j.ok) { adToast("Falha ao enviar: " + (j.error || ("HTTP " + r.status))); btn.disabled = false; btn.textContent = "Enviar notificação"; return; }
+      try { ov.remove(); } catch (e) {}
+      var extra = (j.semInscricao && j.semInscricao.length) ? " · " + j.semInscricao.length + " sem push ativo" : "";
+      adToast("🔔 Enviado a " + (j.enviados || 0) + " de " + (j.alvos || emails.length) + extra);
+    } catch (e) {
+      adToast("Erro de rede ao enviar"); btn.disabled = false; btn.textContent = "Enviar notificação";
+    }
+  }
   // POPUP ÚNICA: completa nome/telefone das contas antigas que ficaram vazias (antes da regra obrigatória).
   // Aparece 1x só (flag em localStorage). Depois de preencher e salvar (ou "Agora não"), não volta.
   function maybeFixContato() {
