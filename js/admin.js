@@ -8,7 +8,7 @@
   var sb = null;
   // Worker de push (Cloudflare). O /admin/notify exige a ADMIN_KEY (segredo do worker) no header x-admin-key.
   // A chave NÃO fica no código: o admin digita 1x e ela fica salva só neste aparelho.
-  var PUSH_API = "https://financas-push.kaickjhon.workers.dev";
+  var PUSH_API = "https://financas-push.morbiusfin.workers.dev";
   var PUSH_KEY_LS = "mfadmin.pushKey";
   function getPushKey() {
     var k = ""; try { k = localStorage.getItem(PUSH_KEY_LS) || ""; } catch (e) {}
