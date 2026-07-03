@@ -40,8 +40,8 @@
   // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
   var PLANOS_DEF = [
     { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", preco_anual: "R$ 79,90/ano", link_mensal: "https://mpago.la/1v75rri", link_anual: "https://mpago.la/1jMBXjG" },
-    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 19,90/mês", preco_anual: "R$ 149,90/ano", link_mensal: "https://mpago.la/348pX4C", link_anual: "https://mpago.la/2N3VVMp" },
-    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 249,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw", link_anual: "https://mpago.la/17axJzb" },
+    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 16,90/mês", preco_anual: "R$ 149,90/ano", link_mensal: "https://mpago.la/348pX4C", link_anual: "https://mpago.la/2N3VVMp" },
+    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 199,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw", link_anual: "https://mpago.la/17axJzb" },
   ];
   var _planosCfg = null;
   async function loadPlanosCfg() {
