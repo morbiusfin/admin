@@ -111,14 +111,15 @@
     .fc-acts { display: flex; gap: 10px; margin-top: 16px; }
     .fc-acts .btn { flex: 1; }
     /* popup de notificação de despesas a vencer */
-    .nt-card { position: relative; }
+    .nt-card { position: relative; display: flex; flex-direction: column; overflow: hidden; }   /* card não rola; só a lista rola dentro → botões ficam fixos no rodapé */
+    .nt-card .fc-acts { flex: 0 0 auto; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); background: var(--card); }
     .wn-x { position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; background: var(--card-2); color: var(--muted); border-radius: 9px; font-size: 15px; font-weight: 800; cursor: pointer; line-height: 1; }
     .wn-x:active { transform: scale(.94); }
     .nt-days { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 13px; color: var(--muted); font-weight: 700; margin: 4px 0 12px; }
     .nt-days input { width: 70px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 16px; font-weight: 800; text-align: center; }
     .nt-all { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 8px; cursor: pointer; }
     .nt-all input, .nt-row input { width: 18px; height: 18px; accent-color: var(--accent, #15c266); flex: 0 0 auto; }
-    .nt-list { max-height: 46vh; }
+    .nt-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }   /* área rolável = só a lista de contatos */
     .nt-row { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
     .nt-row:has(input:checked) { border-color: rgba(21,194,102,.5); background: rgba(21,194,102,.07); }
     .nt-mid { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
