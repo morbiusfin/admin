@@ -44,6 +44,79 @@
   async function loadPlanosCfg() {
     try { var q = await client().from("config").select("v").eq("k", "planos").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (Array.isArray(p)) _planosCfg = p; } } catch (e) {}
   }
+
+  // ===== ACESSOS (feature flags) — matriz por plano + override por pessoa =====
+  var FEATURE_LIST = [
+    { k: "nuvem", lbl: "Sync na nuvem + backup auto" },
+    { k: "multidisp", lbl: "Multi-dispositivo" },
+    { k: "conjunta", lbl: "Conta conjunta (casal)" },
+    { k: "suporte", lbl: "Suporte prioritário" },
+    { k: "antecipado", lbl: "Acesso antecipado" },
+  ];
+  var PLAN_LIST = [{ k: "teste", lbl: "Grátis" }, { k: "plus", lbl: "Plus" }, { k: "pro", lbl: "Pro" }, { k: "ultimate", lbl: "Ultimate" }];
+  var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true } };
+  var _planFeat = null;
+  async function loadPlanFeatCfg() {
+    try { var q = await client().from("config").select("v").eq("k", "plan_features").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _planFeat = p; } } catch (e) {}
+  }
+  function planFeatMerged() {
+    var out = {};
+    PLAN_LIST.forEach(function (p) { var base = FEAT_DEF[p.k] || {}, cfg = (_planFeat && _planFeat[p.k]) || {}, row = {}; FEATURE_LIST.forEach(function (f) { row[f.k] = (cfg[f.k] != null) ? !!cfg[f.k] : !!base[f.k]; }); out[p.k] = row; });
+    return out;
+  }
+  function renderAcessos() {
+    var c = content(); if (!c) return;
+    var m = planFeatMerged();
+    var head = '<tr><th>Recurso</th>' + PLAN_LIST.map(function (p) { return '<th>' + esc(p.lbl) + '</th>'; }).join("") + '</tr>';
+    var rows = FEATURE_LIST.map(function (f) {
+      return '<tr><td class="acx-flab">' + esc(f.lbl) + '</td>' + PLAN_LIST.map(function (p) {
+        return '<td><input type="checkbox" class="acx-ck" data-p="' + p.k + '" data-f="' + f.k + '"' + (m[p.k][f.k] ? " checked" : "") + '></td>';
+      }).join("") + '</tr>';
+    }).join("");
+    c.innerHTML = '<div class="ad-card">'
+      + '<div class="pl-intro">Tique o que cada plano tem. <b>Salvar</b> publica pra todos. Override individual é o 🔑 na aba Contas.</div>'
+      + '<div class="acx-wrap"><table class="acx-tbl">' + head + rows + '</table></div>'
+      + '<div class="pl-save-row"><button type="button" class="btn primary" id="acxSave">Salvar e publicar</button><span id="acxMsg" class="ad-trial-msg"></span></div></div>';
+    var sv = c.querySelector("#acxSave");
+    sv.onclick = async function () {
+      var out = {}; PLAN_LIST.forEach(function (p) { out[p.k] = {}; });
+      c.querySelectorAll(".acx-ck").forEach(function (ck) { out[ck.dataset.p][ck.dataset.f] = ck.checked; });
+      var msg = c.querySelector("#acxMsg"); sv.disabled = true; sv.textContent = "…";
+      var r = await client().from("config").upsert({ k: "plan_features", v: JSON.stringify(out) }).select();
+      sv.disabled = false; sv.textContent = "Salvar e publicar";
+      if (r.error) { msg.textContent = "Erro — rodou features.sql?"; msg.className = "ad-trial-msg bad"; return; }
+      _planFeat = out; msg.textContent = "✓ publicado"; msg.className = "ad-trial-msg ok"; adToast("🔑 Acessos por plano atualizados");
+    };
+  }
+  function openUserFeatures(uid) {
+    var l = byUid(uid); if (!l) return;
+    var ov = (l.features && typeof l.features === "object") ? l.features : {};
+    var m = document.getElementById("ufOv"); if (m) m.remove();
+    m = document.createElement("div"); m.id = "ufOv"; m.className = "fc-ov"; document.body.appendChild(m);
+    var rows = FEATURE_LIST.map(function (f) {
+      var v = (ov[f.k] === true) ? "on" : (ov[f.k] === false) ? "off" : "herda";
+      return '<label class="uf-row"><span>' + esc(f.lbl) + '</span><select data-f="' + f.k + '">'
+        + '<option value="herda"' + (v === "herda" ? " selected" : "") + '>Herda do plano</option>'
+        + '<option value="on"' + (v === "on" ? " selected" : "") + '>Ligado</option>'
+        + '<option value="off"' + (v === "off" ? " selected" : "") + '>Desligado</option></select></label>';
+    }).join("");
+    m.innerHTML = '<div class="fc-card"><div class="fc-h">🔑 Acessos de ' + esc(l.nome || l.email || "(sem nome)") + '</div>'
+      + '<div class="fc-sub">Override desta pessoa. "Herda" = usa o padrão do plano (' + esc(l.plano || "teste") + ').</div>'
+      + '<div class="uf-list">' + rows + '</div>'
+      + '<div class="fc-acts"><button type="button" class="btn ghost" id="ufCancel">Cancelar</button><button type="button" class="btn primary" id="ufSave">Salvar</button></div></div>';
+    m.querySelector("#ufCancel").onclick = function () { m.remove(); };
+    m.addEventListener("click", function (e) { if (e.target === m) m.remove(); });
+    m.querySelector("#ufSave").onclick = async function () {
+      var obj = {};
+      m.querySelectorAll(".uf-row select").forEach(function (s) { if (s.value === "on") obj[s.dataset.f] = true; else if (s.value === "off") obj[s.dataset.f] = false; });
+      var feats = Object.keys(obj).length ? obj : null;
+      var btn = this; btn.disabled = true; btn.textContent = "…";
+      var r = await client().from("licencas").update({ features: feats, atualizado_em: new Date().toISOString() }).eq("user_id", uid).select();
+      btn.disabled = false; btn.textContent = "Salvar";
+      if (r.error) { alert("Erro ao salvar acessos: " + r.error.message + "\n(rodou features.sql?)"); return; }
+      l.features = feats; m.remove(); adToast("🔑 Acessos salvos");
+    };
+  }
   function planoMerged() {
     return PLANOS_DEF.map(function (d) { var o = (_planosCfg || []).find(function (x) { return x && x.id === d.id; }) || {}; var m = {}; for (var k in d) m[k] = d[k]; for (var k2 in o) { if (o[k2] !== "" && o[k2] != null) m[k2] = o[k2]; } return m; });
   }
@@ -112,9 +185,10 @@
       + '<button type="button" class="ad-tab' + (_tab === "contas" ? " on" : "") + '" data-tab="contas">📋 Contas</button>'
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
       + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
+      + '<button type="button" class="ad-tab' + (_tab === "acessos" ? " on" : "") + '" data-tab="acessos">🔑 Acessos</button>'
       + '</div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
-    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else renderTable("");
+    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else renderTable("");
   }
   function adToast(msg) {
     var t = document.getElementById("adToast");
@@ -199,6 +273,7 @@
     _all = q.data || [];
     try { await loadTrialCfg(); } catch (e) {}   // dias do teste grátis (pro controle no topo das Contas)
     try { await loadPlanosCfg(); } catch (e) {}  // preços/textos/links dos planos (aba Planos)
+    try { await loadPlanFeatCfg(); } catch (e) {} // matriz de acessos por plano (aba Acessos)
     renderShell();
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
@@ -243,6 +318,7 @@
         + '<button class="btn ghost sm" data-act="vitalicio" title="Vitalício (sem validade)">Vit.</button></div>'
         + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Ativar" : "Bloquear") + '</button>'
         + '<button class="btn primary sm" data-act="save">Salvar</button>'
+        + '<button class="btn ghost sm" data-act="feats" title="Acessos desta pessoa (override do plano)">🔑</button>'
         + '</div></div>';
     });
     html += '</div>';
@@ -274,6 +350,7 @@
       row.querySelector('[data-act="plus30"]').onclick = function () { shiftValidade(uid, row, 30); };
       row.querySelector('[data-act="plus1y"]').onclick = function () { shiftValidade(uid, row, 365); };
       row.querySelector('[data-act="vitalicio"]').onclick = function () { setVitalicio(uid, row); };
+      var fb = row.querySelector('[data-act="feats"]'); if (fb) fb.onclick = function () { openUserFeatures(uid); };
     });
   }
   var _searchT = null;
