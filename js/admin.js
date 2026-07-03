@@ -33,6 +33,65 @@
     try { var q = await client().from("config").select("v").eq("k", "trial_days").limit(1); if (!q.error && q.data && q.data[0]) { var n = parseInt(q.data[0].v, 10); if (n >= 0 && n <= 365) _trialCfg = n; } } catch (e) {}
   }
   function fmtNasc(s) { s = String(s || ""); var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[3] + "/" + m[2] + "/" + m[1]) : s; }   // "1996-04-18" -> "18/04/1996"
+
+  // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
+  var PLANOS_DEF = [
+    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", preco_anual: "R$ 79,90/ano", link_mensal: "https://mpago.la/1v75rri", link_anual: "https://mpago.la/1jMBXjG" },
+    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 19,90/mês", preco_anual: "R$ 149,90/ano", link_mensal: "https://mpago.la/348pX4C", link_anual: "https://mpago.la/2N3VVMp" },
+    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 249,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw", link_anual: "https://mpago.la/17axJzb" },
+  ];
+  var _planosCfg = null;
+  async function loadPlanosCfg() {
+    try { var q = await client().from("config").select("v").eq("k", "planos").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (Array.isArray(p)) _planosCfg = p; } } catch (e) {}
+  }
+  function planoMerged() {
+    return PLANOS_DEF.map(function (d) { var o = (_planosCfg || []).find(function (x) { return x && x.id === d.id; }) || {}; var m = {}; for (var k in d) m[k] = d[k]; for (var k2 in o) { if (o[k2] !== "" && o[k2] != null) m[k2] = o[k2]; } return m; });
+  }
+  function plFld(id, k, label, val) {
+    return '<label class="pl-fld"><span>' + esc(label) + '</span><input data-pl="' + esc(id) + '-' + k + '" value="' + esc(val || "") + '"></label>';
+  }
+  function renderPlanos() {
+    var c = content(); if (!c) return;
+    var ps = planoMerged();
+    var blocks = ps.map(function (p) {
+      var precoRow = p.unico
+        ? plFld(p.id, "preco_unico", "Preço (pagamento único)", p.preco_unico)
+        : plFld(p.id, "preco_mensal", "Preço mensal", p.preco_mensal) + plFld(p.id, "preco_anual", "Preço anual", p.preco_anual);
+      var linkM = p.unico ? "Link pagamento (ciclo Mensal)" : "Link pagamento mensal";
+      var linkA = p.unico ? "Link pagamento (ciclo Anual)" : "Link pagamento anual";
+      return '<div class="pl-card">'
+        + '<div class="pl-h">' + esc(p.nome) + ' <span class="pl-id">' + esc(p.id) + '</span></div>'
+        + plFld(p.id, "nome", "Nome", p.nome)
+        + plFld(p.id, "desc", "Descrição", p.desc)
+        + precoRow
+        + plFld(p.id, "link_mensal", linkM, p.link_mensal)
+        + plFld(p.id, "link_anual", linkA, p.link_anual)
+        + '</div>';
+    }).join("");
+    c.innerHTML = '<div class="ad-card">'
+      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). <b>Salvar</b> publica direto no app de produção.</div>'
+      + blocks
+      + '<div class="pl-save-row"><button type="button" class="btn primary" id="plSave">Salvar e publicar</button><span id="plMsg" class="ad-trial-msg"></span></div>'
+      + '<div class="pl-note">Preço é texto livre (ex.: "R$ 9,90/mês"). Link vazio → botão mostra "Em breve" no app. Cor e selo do plano seguem fixos.</div>'
+      + '</div>';
+    var sv = c.querySelector("#plSave");
+    sv.onclick = async function () {
+      var out = ps.map(function (p) {
+        function g(k) { var el = c.querySelector('[data-pl="' + p.id + '-' + k + '"]'); return el ? el.value.trim() : ""; }
+        var o = { id: p.id, nome: g("nome"), desc: g("desc"), link_mensal: g("link_mensal"), link_anual: g("link_anual") };
+        if (p.unico) { o.unico = true; o.preco_unico = g("preco_unico"); } else { o.preco_mensal = g("preco_mensal"); o.preco_anual = g("preco_anual"); }
+        return o;
+      });
+      var msg = c.querySelector("#plMsg");
+      sv.disabled = true; sv.textContent = "…";
+      var r = await client().from("config").upsert({ k: "planos", v: JSON.stringify(out) }).select();
+      sv.disabled = false; sv.textContent = "Salvar e publicar";
+      if (r.error) { msg.textContent = "Erro — rodou o SQL config (trial-config)?"; msg.className = "ad-trial-msg bad"; return; }
+      _planosCfg = out;
+      msg.textContent = "✓ publicado no app"; msg.className = "ad-trial-msg ok";
+      adToast("💳 Planos atualizados no app");
+    };
+  }
   function content() { return document.getElementById("adContent"); }
   // dias restantes da licença (pro admin saber quanto falta)
   function diasInfo(v) {
@@ -52,9 +111,10 @@
     view().innerHTML = '<div class="ad-tabs">'
       + '<button type="button" class="ad-tab' + (_tab === "contas" ? " on" : "") + '" data-tab="contas">📋 Contas</button>'
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
+      + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
       + '</div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
-    if (_tab === "uso") renderUsage(); else renderTable("");
+    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else renderTable("");
   }
   function adToast(msg) {
     var t = document.getElementById("adToast");
@@ -138,6 +198,7 @@
     }
     _all = q.data || [];
     try { await loadTrialCfg(); } catch (e) {}   // dias do teste grátis (pro controle no topo das Contas)
+    try { await loadPlanosCfg(); } catch (e) {}  // preços/textos/links dos planos (aba Planos)
     renderShell();
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
