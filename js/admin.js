@@ -29,6 +29,7 @@
   var _all = [], _email = "", _refreshT = null, _tab = "contas";
   var _pushStatus = {};   // email -> true/false (tem push ativo) · alimenta o sininho por linha
   var _refCounts = {};    // inviter_uid -> nº de pessoas indicadas (tabela referrals)
+  var _devCounts = {};    // user_id -> nº de aparelhos registrados (tabela devices)
   // TESTE GRÁTIS (dias) p/ contas novas — fonte única na tabela 'config'. O app lê; aqui edita.
   var _trialCfg = 7;
   async function loadTrialCfg() {
@@ -312,6 +313,14 @@
       if (!q.error && q.data) q.data.forEach(function (r) { var u = r.inviter_uid; if (u) _refCounts[u] = (_refCounts[u] || 0) + 1; });
     } catch (e) {}   // tabela ainda não existe (referrals.sql não rodou) → contagem fica 0, nada quebra
   }
+  // Conta quantos aparelhos cada usuário tem registrado (tabela devices; gate multi-dispositivo).
+  async function loadDeviceCounts() {
+    _devCounts = {};
+    try {
+      var q = await client().from("devices").select("user_id");
+      if (!q.error && q.data) q.data.forEach(function (d) { var u = d.user_id; if (u) _devCounts[u] = (_devCounts[u] || 0) + 1; });
+    } catch (e) {}   // tabela ainda não existe (devices.sql não rodou) → 0, nada quebra
+  }
   // Pergunta ao worker quem tem push ATIVO (inscrição viva). Silencioso: sem a chave do admin salva, pula (sino oculto).
   async function loadPushStatus() {
     _pushStatus = {};
@@ -342,6 +351,7 @@
     try { await loadPlanFeatCfg(); } catch (e) {} // matriz de acessos por plano (aba Acessos)
     try { await loadRefDiscCfg(); } catch (e) {}  // links de desconto por indicação (aba Descontos)
     try { await loadRefCounts(); } catch (e) {}   // nº de indicados por usuário (coluna nas Contas)
+    try { await loadDeviceCounts(); } catch (e) {} // nº de aparelhos por usuário (gate multi-dispositivo)
     try { await loadPushStatus(); } catch (e) {}  // sininho de push ativo por usuário
     renderShell();
     startAutoRefresh();
@@ -381,7 +391,9 @@
                : (pon === false) ? ' <span class="ad-bell off" title="SEM push — a pessoa ainda não ativou/entrou no app; recado não chega">🔕</span>' : '';
       // Indicações: quantas pessoas esse usuário trouxe + link de convite dele.
       var rc = _refCounts[l.user_id] || 0;
+      var dc = _devCounts[l.user_id] || 0;
       var refLine = '<div class="ad-ref">👥 <b>' + rc + '</b> indicado' + (rc === 1 ? '' : 's')
+        + ' · 📱 <b>' + dc + '</b> aparelho' + (dc === 1 ? '' : 's')
         + ' · <button type="button" class="ad-reflink" data-uid="' + esc(l.user_id) + '" title="Copiar o link de indicação desta pessoa">🔗 link</button></div>';
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-name">' + nomeTxt + bell + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt + refLine
