@@ -59,6 +59,48 @@
   async function loadPlanFeatCfg() {
     try { var q = await client().from("config").select("v").eq("k", "plan_features").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _planFeat = p; } } catch (e) {}
   }
+
+  // ===== DESCONTOS por indicação (links MP por faixa de %, só mensal) =====
+  var DISC_TIERS = [10, 20, 30, 40];
+  var DISC_PLANS = [{ k: "plus", lbl: "Plus" }, { k: "pro", lbl: "Pro" }, { k: "ultimate", lbl: "Ultimate" }];
+  var _refDisc = null;
+  async function loadRefDiscCfg() {
+    try { var q = await client().from("config").select("v").eq("k", "ref_discounts").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _refDisc = p; } } catch (e) {}
+  }
+  function baseMensal(planoKey) {
+    var ps = planoMerged(); var p = ps.filter(function (x) { return x.id === planoKey; })[0]; if (!p) return 0;
+    var m = String(p.preco_mensal || "").match(/[\d.,]+/); if (!m) return 0;
+    return parseFloat(m[0].replace(/\./g, "").replace(",", ".")) || 0;
+  }
+  function fmtBRL(n) { return "R$ " + (n || 0).toFixed(2).replace(".", ","); }
+  function renderDescontos() {
+    var c = content(); if (!c) return;
+    var rd = _refDisc || {};
+    var blocks = DISC_PLANS.map(function (p) {
+      var base = baseMensal(p.k);
+      var rows = DISC_TIERS.map(function (t) {
+        var price = base * (1 - t / 100);
+        var val = (rd[p.k] && rd[p.k][t]) || "";
+        return '<div class="dz-row"><span class="dz-tier">' + t + '% OFF</span><span class="dz-price">' + (base ? fmtBRL(price) + "/mês" : "—") + '</span><input class="dz-link" data-p="' + p.k + '" data-t="' + t + '" placeholder="link Mercado Pago" value="' + esc(val) + '"></div>';
+      }).join("");
+      return '<div class="pl-card"><div class="pl-h">' + esc(p.lbl) + ' <span class="pl-id">base ' + (base ? fmtBRL(base) : "—") + '/mês</span></div>' + rows + '</div>';
+    }).join("");
+    c.innerHTML = '<div class="ad-card">'
+      + '<div class="pl-intro">Cole os links do Mercado Pago com desconto (mensal). O preço com desconto é calculado da <b>base</b> (aba Planos). A pessoa cai no link da faixa conforme quantos amigos qualificou (5%/amigo → faixas de 10%, teto 40%).</div>'
+      + blocks
+      + '<div class="pl-save-row"><button type="button" class="btn primary" id="dzSave">Salvar e publicar</button><span id="dzMsg" class="ad-trial-msg"></span></div>'
+      + '<div class="pl-note">Se faltar um link de faixa, o app usa o link normal do plano. Anual não tem desconto.</div></div>';
+    var sv = c.querySelector("#dzSave");
+    sv.onclick = async function () {
+      var out = {};
+      c.querySelectorAll(".dz-link").forEach(function (i) { var v = i.value.trim(); if (v) { (out[i.dataset.p] = out[i.dataset.p] || {})[i.dataset.t] = v; } });
+      var msg = c.querySelector("#dzMsg"); sv.disabled = true; sv.textContent = "…";
+      var r = await client().from("config").upsert({ k: "ref_discounts", v: JSON.stringify(out) }).select();
+      sv.disabled = false; sv.textContent = "Salvar e publicar";
+      if (r.error) { msg.textContent = "Erro — rodou trial-config?"; msg.className = "ad-trial-msg bad"; return; }
+      _refDisc = out; msg.textContent = "✓ publicado"; msg.className = "ad-trial-msg ok"; adToast("🎁 Descontos atualizados");
+    };
+  }
   function planFeatMerged() {
     var out = {};
     PLAN_LIST.forEach(function (p) { var base = FEAT_DEF[p.k] || {}, cfg = (_planFeat && _planFeat[p.k]) || {}, row = {}; FEATURE_LIST.forEach(function (f) { row[f.k] = (cfg[f.k] != null) ? !!cfg[f.k] : !!base[f.k]; }); out[p.k] = row; });
@@ -186,9 +228,10 @@
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
       + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
       + '<button type="button" class="ad-tab' + (_tab === "acessos" ? " on" : "") + '" data-tab="acessos">🔑 Acessos</button>'
+      + '<button type="button" class="ad-tab' + (_tab === "descontos" ? " on" : "") + '" data-tab="descontos">🎁 Descontos</button>'
       + '</div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
-    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else renderTable("");
+    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else if (_tab === "descontos") renderDescontos(); else renderTable("");
   }
   function adToast(msg) {
     var t = document.getElementById("adToast");
@@ -274,6 +317,7 @@
     try { await loadTrialCfg(); } catch (e) {}   // dias do teste grátis (pro controle no topo das Contas)
     try { await loadPlanosCfg(); } catch (e) {}  // preços/textos/links dos planos (aba Planos)
     try { await loadPlanFeatCfg(); } catch (e) {} // matriz de acessos por plano (aba Acessos)
+    try { await loadRefDiscCfg(); } catch (e) {}  // links de desconto por indicação (aba Descontos)
     renderShell();
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
