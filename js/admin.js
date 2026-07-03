@@ -27,6 +27,8 @@
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
   var _all = [], _email = "", _refreshT = null, _tab = "contas";
+  var _pushStatus = {};   // email -> true/false (tem push ativo) · alimenta o sininho por linha
+  var _refCounts = {};    // inviter_uid -> nº de pessoas indicadas (tabela referrals)
   // TESTE GRÁTIS (dias) p/ contas novas — fonte única na tabela 'config'. O app lê; aqui edita.
   var _trialCfg = 7;
   async function loadTrialCfg() {
@@ -302,6 +304,27 @@
     var s = await c.auth.getSession();
     if (s.data && s.data.session) showPanel(s.data.session.user.email); else showLogin();
   }
+  // Conta quantas pessoas cada usuário indicou (tabela referrals; admin lê tudo via RLS referrals_admin_sel).
+  async function loadRefCounts() {
+    _refCounts = {};
+    try {
+      var q = await client().from("referrals").select("inviter_uid");
+      if (!q.error && q.data) q.data.forEach(function (r) { var u = r.inviter_uid; if (u) _refCounts[u] = (_refCounts[u] || 0) + 1; });
+    } catch (e) {}   // tabela ainda não existe (referrals.sql não rodou) → contagem fica 0, nada quebra
+  }
+  // Pergunta ao worker quem tem push ATIVO (inscrição viva). Silencioso: sem a chave do admin salva, pula (sino oculto).
+  async function loadPushStatus() {
+    _pushStatus = {};
+    try {
+      var key = ""; try { key = localStorage.getItem(PUSH_KEY_LS) || ""; } catch (e) {}
+      if (!key) return;
+      var emails = _all.map(function (l) { return (l.email || "").trim().toLowerCase(); }).filter(Boolean);
+      if (!emails.length) return;
+      var r = await fetch(PUSH_API + "/admin/status", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key }, body: JSON.stringify({ emails: emails }) });
+      if (!r.ok) return;
+      var j = await r.json(); if (j && j.status) _pushStatus = j.status;
+    } catch (e) {}
+  }
   async function showPanel(email) {
     _email = email || "";
     who().innerHTML = '<span>' + esc(_email) + '</span><button class="btn ghost sm" id="adOut">Sair</button>';
@@ -318,6 +341,8 @@
     try { await loadPlanosCfg(); } catch (e) {}  // preços/textos/links dos planos (aba Planos)
     try { await loadPlanFeatCfg(); } catch (e) {} // matriz de acessos por plano (aba Acessos)
     try { await loadRefDiscCfg(); } catch (e) {}  // links de desconto por indicação (aba Descontos)
+    try { await loadRefCounts(); } catch (e) {}   // nº de indicados por usuário (coluna nas Contas)
+    try { await loadPushStatus(); } catch (e) {}  // sininho de push ativo por usuário
     renderShell();
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
@@ -350,8 +375,16 @@
       var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
       var telTxt = (l.telefone && String(l.telefone).trim()) ? '<div class="ad-tel">📱 ' + esc(l.telefone) + '</div>' : '';
       var nascTxt = (l.nascimento && String(l.nascimento).trim()) ? '<div class="ad-tel">🎂 ' + esc(fmtNasc(l.nascimento)) + '</div>' : '';
+      // Sininho: a pessoa ativou push? (true=chega recado / false=não ativou / undefined=chave do admin não informada → oculto)
+      var pon = _pushStatus[(l.email || "").trim().toLowerCase()];
+      var bell = (pon === true) ? ' <span class="ad-bell on" title="Push ATIVO — seus recados chegam nesta pessoa">🔔</span>'
+               : (pon === false) ? ' <span class="ad-bell off" title="SEM push — a pessoa ainda não ativou/entrou no app; recado não chega">🔕</span>' : '';
+      // Indicações: quantas pessoas esse usuário trouxe + link de convite dele.
+      var rc = _refCounts[l.user_id] || 0;
+      var refLine = '<div class="ad-ref">👥 <b>' + rc + '</b> indicado' + (rc === 1 ? '' : 's')
+        + ' · <button type="button" class="ad-reflink" data-uid="' + esc(l.user_id) + '" title="Copiar o link de indicação desta pessoa">🔗 link</button></div>';
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
-        + '<div><div class="ad-name">' + nomeTxt + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt
+        + '<div><div class="ad-name">' + nomeTxt + bell + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt + refLine
         + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
         + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '') + (function () { var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>'; })() + '</div></div>'
         + '<div class="ad-controls">'
@@ -395,6 +428,11 @@
       row.querySelector('[data-act="plus1y"]').onclick = function () { shiftValidade(uid, row, 365); };
       row.querySelector('[data-act="vitalicio"]').onclick = function () { setVitalicio(uid, row); };
       var fb = row.querySelector('[data-act="feats"]'); if (fb) fb.onclick = function () { openUserFeatures(uid); };
+      var rlk = row.querySelector('.ad-reflink'); if (rlk) rlk.onclick = function () {
+        var link = "https://morbiusfin.github.io/?ref=" + encodeURIComponent(this.dataset.uid);
+        try { navigator.clipboard.writeText(link); } catch (e) {}
+        adToast("🔗 Link de indicação copiado");
+      };
     });
   }
   var _searchT = null;
