@@ -387,6 +387,9 @@
       var tEmoji = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" }[tier] || "broto";
       var tNome = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
       var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
+      // Plano EFETIVO no app: pago com validade vencida → o freemium rebaixou pra Grátis (só bloqueio manual tranca).
+      var venc = (function () { if (!l.validade) return false; var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s); return !isNaN(d.getTime()) && d.getTime() < Date.now(); })();
+      var caiuGratis = venc && tier !== "teste" && !bloq;   // pago vencido → pessoa usando Grátis agora
       var planoLbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
       var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
       var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
@@ -405,7 +408,14 @@
       html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
         + '<div><div class="ad-name">' + nomeTxt + bell + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt + refLine
         + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
-        + '<span>criado ' + fmtDate(l.criado_em) + '</span>' + (l.validade ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '') + (function () { var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>'; })() + '</div></div>'
+        + '<span>criado ' + fmtDate(l.criado_em) + '</span>'
+        + ((l.validade && !(tier === "teste" && venc)) ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '')
+        + (function () {
+            if (tier === "teste") { if (!l.validade || venc) return '<span class="ad-dias dias-vit">Grátis</span>'; var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + ' de teste</span>'; }
+            var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>';
+          })()
+        + (caiuGratis ? '<span class="ad-efetivo" title="A validade venceu — no app esta pessoa está no plano Grátis (rebaixou sozinho). O ' + esc(tNome) + ' comprado segue registrado; renove a data (+30d/+1a) que ele volta.">↓ ativo agora: Grátis</span>' : '')
+        + '</div></div>'
         + '<div class="ad-controls">'
         + '<select data-k="plano" title="Plano">' + planos + '</select>'
         + '<label class="ad-datelbl">Expira (bloqueia ao vencer)<input type="date" data-k="validade" title="Data em que o acesso expira e bloqueia. Vazio = vitalício." value="' + (l.validade ? String(l.validade).slice(0, 10) : "") + '"></label>'
