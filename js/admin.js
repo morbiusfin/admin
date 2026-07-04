@@ -55,6 +55,7 @@
     { k: "simulador", lbl: "🛒 Simulador de compra" },
     { k: "temas", lbl: "🎨 Temas de cor" },
     { k: "pdf", lbl: "📄 Relatório PDF" },
+    { k: "alertas", lbl: "📅 Resumo semanal" },
     { k: "nuvem", lbl: "Sync na nuvem + backup auto" },
     { k: "multidisp", lbl: "Multi-dispositivo" },
     { k: "conjunta", lbl: "Conta conjunta (casal)" },
@@ -63,7 +64,7 @@
     { k: "antecipado", lbl: "Acesso antecipado" },
   ];
   var PLAN_LIST = [{ k: "teste", lbl: "Grátis" }, { k: "plus", lbl: "Plus" }, { k: "pro", lbl: "Pro" }, { k: "ultimate", lbl: "Ultimate" }];
-  var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true, graficos: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, foto: true } };
+  var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true, graficos: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, alertas: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, foto: true, alertas: true } };
   var _planFeat = null;
   async function loadPlanFeatCfg() {
     try { var q = await client().from("config").select("v").eq("k", "plan_features").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _planFeat = p; } } catch (e) {}
