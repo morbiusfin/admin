@@ -52,11 +52,11 @@
   function fmtNasc(s) { s = String(s || ""); var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[3] + "/" + m[2] + "/" + m[1]) : s; }   // "1996-04-18" -> "18/04/1996"
 
   // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
-  // Só mensal (Plus/Pro) + pagamento único vitalício (Ultimate). Sem ciclo anual.
+  // Todos MENSAIS recorrentes (Plus/Pro/Ultimate). Sem ciclo anual, sem vitalício.
   var PLANOS_DEF = [
     { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", link_mensal: "https://mpago.la/1v75rri" },
-    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 16,90/mês", link_mensal: "https://mpago.la/348pX4C" },
-    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 199,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw" },
+    { id: "pro", nome: "Pro", desc: "Tudo do Plus + gráficos, insights, PDF, temas, resumo semanal", preco_mensal: "R$ 16,90/mês", link_mensal: "https://mpago.la/348pX4C" },
+    { id: "ultimate", nome: "Ultimate", desc: "Tudo do Pro + Simulador de compra, conta conjunta e foto de perfil", preco_mensal: "R$ 39,90/mês", link_mensal: "https://mpago.la/17XLZZw" },
   ];
   var _planosCfg = null;
   async function loadPlanosCfg() {
@@ -83,7 +83,7 @@
   var PLAN_EMOJI = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" };
   // ordem de exibição das seções na aba Contas: Ultimate → Pro → Plus → Grátis (maior valor primeiro)
   var PLAN_ORDER_DESC = ["ultimate", "pro", "plus", "teste"];
-  var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true, graficos: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, alertas: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, foto: true, alertas: true } };
+  var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true, graficos: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: false, temas: true, pdf: true, alertas: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, foto: true, alertas: true } };
   var _planFeat = null;
   async function loadPlanFeatCfg() {
     try { var q = await client().from("config").select("v").eq("k", "plan_features").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _planFeat = p; } } catch (e) {}
@@ -224,7 +224,7 @@
         + '</div>';
     }).join("");
     c.innerHTML = '<div class="ad-card">'
-      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). Só mensal (Plus/Pro) + pagamento único vitalício (Ultimate). <b>Salvar</b> publica direto no app de produção.</div>'
+      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). Todos os planos são <b>mensais recorrentes</b> (Plus/Pro/Ultimate). <b>Salvar</b> publica direto no app de produção.</div>'
       + blocks
       + '<div class="pl-save-row"><button type="button" class="btn primary" id="plSave">Salvar e publicar</button><span id="plMsg" class="ad-trial-msg"></span></div>'
       + '<div class="pl-note">Preço é texto livre (ex.: "R$ 9,90/mês"). Link vazio → botão mostra "Em breve" no app. Cor e selo do plano seguem fixos.</div>'
@@ -330,13 +330,13 @@
   // Tom de gente, sem jargão. { emoji, titulo, texto } — o emoji some do título (fica só no cabeçalho do popover).
   var HELP_TXT = {
     "mrr": { emoji: "💸", titulo: "MRR estimada / mês", texto: "Quanto entra POR MÊS, mais ou menos: soma das assinaturas Plus e Pro ativas × o preço mensal de cada uma. É a sua renda recorrente estimada." },
-    "vitalicia": { emoji: "💎", titulo: "Receita vitalícia (total)", texto: "Tudo que você já vendeu em planos Ultimate (pagamento único, vitalício). NÃO é por mês — é o total acumulado desses pagamentos." },
+    "assinantes": { emoji: "💳", titulo: "Assinantes pagantes", texto: "Quantas contas estão pagando agora — Plus + Pro + Ultimate ativos. É a base que gera a sua MRR." },
     "conversao": { emoji: "📈", titulo: "Conversão", texto: "De todas as contas, quantas são pagas. Ex.: 6 de 9 = 67%. Quanto maior, melhor." },
     "ticket": { emoji: "🎟️", titulo: "Ticket médio (assinantes)", texto: "Em média, quanto cada ASSINANTE mensal paga por mês (MRR ÷ nº de assinantes Plus+Pro)." },
     "total": { emoji: "👥", titulo: "Total de contas", texto: "Quantas contas existem no MorbiusFin no total — gratuitas e pagas, ativas e bloqueadas, somadas." },
     "ativos": { emoji: "✅", titulo: "Ativas", texto: "Contas que você não bloqueou manualmente. Podem ser do plano Grátis ou de um plano pago — só não estão trancadas." },
     "bloqueados": { emoji: "🚫", titulo: "Bloqueadas", texto: "Contas que você trancou na mão. A pessoa fica sem acesso até você ativar de novo — mesmo que o plano dela ainda esteja válido." },
-    "plano-ultimate": { emoji: "👑", titulo: "Plano Ultimate", texto: "Quantas pessoas compraram o Ultimate (pagamento único, vitalício) — o plano mais completo, sem mensalidade." },
+    "plano-ultimate": { emoji: "👑", titulo: "Plano Ultimate", texto: "Quantas assinam o Ultimate (R$ 39,90/mês) — o plano mais completo: tudo do Pro + Simulador de compra, conta conjunta e foto de perfil." },
     "plano-pro": { emoji: "🚀", titulo: "Plano Pro", texto: "Quantas pessoas assinam o Pro por mês — o plano intermediário, com mais recursos que o Plus." },
     "plano-plus": { emoji: "⭐", titulo: "Plano Plus", texto: "Quantas pessoas assinam o Plus por mês — a porta de entrada dos planos pagos." },
     "plano-teste": { emoji: "🌱", titulo: "Grátis", texto: "Contas usando a versão gratuita — seja porque nunca pagaram, seja porque o plano pago venceu e caiu pro Grátis." },
@@ -386,16 +386,15 @@
     var pushAtivos = Object.keys(_pushStatus).filter(function (k) { return _pushStatus[k] === true; }).length;
 
     // ===== NEGÓCIO: MRR, receita vitalícia, conversão, ticket médio =====
-    var precoPlus = baseMensal("plus"), precoPro = baseMensal("pro"), precoUlt = precoUnicoUltimate();
+    var precoPlus = baseMensal("plus"), precoPro = baseMensal("pro"), precoUlt = baseMensal("ultimate");   // Ultimate agora é MENSAL recorrente
     var plusAtivas = _all.filter(function (l) { return (l.plano || "teste") === "plus" && isAtivaNaoVencida(l); }).length;
     var proAtivas = _all.filter(function (l) { return (l.plano || "teste") === "pro" && isAtivaNaoVencida(l); }).length;
     var ultAtivas = _all.filter(function (l) { return (l.plano || "teste") === "ultimate" && isAtivaNaoVencida(l); }).length;
-    var mrrPlus = plusAtivas * precoPlus, mrrPro = proAtivas * precoPro;
-    var mrr = mrrPlus + mrrPro;
-    var receitaVitalicia = ultAtivas * precoUlt;
+    var mrrPlus = plusAtivas * precoPlus, mrrPro = proAtivas * precoPro, mrrUlt = ultAtivas * precoUlt;
+    var mrr = mrrPlus + mrrPro + mrrUlt;                        // Ultimate agora entra no MRR (mensal recorrente)
+    var assinantesRecorrentes = plusAtivas + proAtivas + ultAtivas;   // pagantes recorrentes (todos os planos são mensais)
     var pagasNaoBloq = _all.filter(function (l) { var t = l.plano || "teste"; return t !== "teste" && l.status !== "bloqueado"; }).length;
     var conversaoPct = total ? Math.round(pagasNaoBloq / total * 100) : 0;
-    var assinantesRecorrentes = plusAtivas + proAtivas;
     var ticketMedio = assinantesRecorrentes ? (mrr / assinantesRecorrentes) : 0;
 
     // ===== RISCO DE VENCIMENTO (churn) — só contas PAGAS (plano != teste) =====
@@ -459,7 +458,7 @@
     // ===== HERO — KPIs de negócio (MRR, vitalícia, conversão, ticket médio) =====
     var heroKpis = [
       { emoji: "💰", n: fmtBRL(mrr), lab: "MRR estimada / mês", cls: "", help: "mrr" },
-      { emoji: "💎", n: fmtBRL(receitaVitalicia), lab: "Receita vitalícia (total)", cls: "", help: "vitalicia" },
+      { emoji: "💳", n: assinantesRecorrentes, lab: "Assinantes pagantes", cls: "", help: "assinantes" },
       { emoji: "📊", n: conversaoPct + "%", lab: "Conversão (" + pagasNaoBloq + " de " + total + ")", cls: conversaoPct >= 15 ? "k-ok" : conversaoPct < 5 ? "k-warn" : "", help: "conversao" },
       { emoji: "🎟️", n: fmtBRL(ticketMedio), lab: "Ticket médio (assinantes)", cls: "", help: "ticket" }
     ];
@@ -468,7 +467,7 @@
     // ===== INSIGHTS do consultor =====
     var insights = dashConsultor({
       total: total, pagasNaoBloq: pagasNaoBloq, conversaoPct: conversaoPct,
-      mrr: mrr, mrrPlus: mrrPlus, mrrPro: mrrPro, receitaVitalicia: receitaVitalicia,
+      mrr: mrr, mrrPlus: mrrPlus, mrrPro: mrrPro, mrrUlt: mrrUlt, assinantes: assinantesRecorrentes,
       pushAtivos: pushAtivos, contasVencemEm7: contasVencemEm7, valorEmRisco7: valorEmRisco7, semPushEm7: semPushEm7,
       porPlano: porPlano, vencidos: vencidos, trialVencendoEm7: trialVencendoEm7
     });
@@ -484,7 +483,7 @@
       }).join("") + '</tr>';
     }).join("");
     var heatHead = '<tr><th>Recurso</th>' + PLAN_LIST.map(function (p) { return '<th>' + esc(p.lbl) + '</th>'; }).join("") + '</tr>';
-    var riscoLbls = ["Vitalício", "Tranquilo (>30d)", "Vence ≤30d", "Vence ≤7d", "Vencido→Grátis"];
+    var riscoLbls = ["Sem prazo", "Tranquilo (>30d)", "Vence ≤30d", "Vence ≤7d", "Vencido→Grátis"];
     var riscoVals = [riscoBuckets.vitalicio, riscoBuckets.tranquilo, riscoBuckets.d30, riscoBuckets.d7, riscoBuckets.vencido];
     var riscoCores = ["#b59bf7", "#15c266", "#f5a623", "#ff9142", "#8b9a92"];
     var growLbls = growKeys.map(function (k) { var parts = k.split("-"); return mesesLbl[parseInt(parts[1], 10) - 1] + "/" + parts[0].slice(2); });
@@ -531,16 +530,15 @@
       });
       _dashCharts.push(chF);
     }
-    // Receita estimada por plano: Plus/Pro em MRR mensal, Ultimate em total vitalício (naturezas diferentes, mesmo card p/ comparar magnitude).
-    // Rótulos CURTOS e retos (sem rotação) — a diferença MRR/vitalício vai no tooltip, não no eixo. Valor sempre
-    // visível em cima da barra (inclusive R$0) pra não parecer "gráfico quebrado" quando só um plano tem receita.
+    // Receita estimada por plano — MRR mensal recorrente (os 3 planos são mensais agora, incl. Ultimate).
+    // Rótulos CURTOS e retos, valor sempre visível em cima da barra (inclusive R$0) pra não parecer "gráfico quebrado".
     var elReceita = document.getElementById("chReceita");
     if (elReceita) {
-      var receitaNatureza = ["MRR (por mês)", "MRR (por mês)", "vitalício (total)"];
+      var receitaNatureza = ["MRR (por mês)", "MRR (por mês)", "MRR (por mês)"];
       var chR = new Chart(elReceita.getContext("2d"), {
         type: "bar",
         plugins: [barValuePlugin],
-        data: { labels: ["Plus", "Pro", "Ultimate"], datasets: [{ data: [mrrPlus, mrrPro, receitaVitalicia], backgroundColor: [PLAN_COLOR.plus, PLAN_COLOR.pro, PLAN_COLOR.ultimate], borderRadius: 8, maxBarThickness: 46 }] },
+        data: { labels: ["Plus", "Pro", "Ultimate"], datasets: [{ data: [mrrPlus, mrrPro, mrrUlt], backgroundColor: [PLAN_COLOR.plus, PLAN_COLOR.pro, PLAN_COLOR.ultimate], borderRadius: 8, maxBarThickness: 46 }] },
         options: {
           responsive: true, maintainAspectRatio: false,
           layout: { padding: { top: 22 } },   // espaço pro valor não cortar no topo do card
@@ -617,10 +615,11 @@
     out.push({ icon: "📊", tone: convTone, titulo: d.conversaoPct + "% das contas são pagas",
       texto: d.pagasNaoBloq + " de " + d.total + " contas · " + convTxt + "." });
     // 3) Receita
-    var maiorFonte = d.mrrPlus >= d.mrrPro ? "Plus" : "Pro";
-    var maiorPct = d.mrr ? Math.round((d.mrrPlus >= d.mrrPro ? d.mrrPlus : d.mrrPro) / d.mrr * 100) : 0;
-    out.push({ icon: "💰", tone: "ok", titulo: "MRR de " + fmtBRL(d.mrr) + "/mês + " + fmtBRL(d.receitaVitalicia) + " vitalícios",
-      texto: d.mrr ? ("Maior fonte recorrente: " + maiorFonte + " (" + maiorPct + "% da MRR).") : "Ainda sem assinatura recorrente ativa — a receita de hoje é só vitalícia." });
+    var maiorVal = Math.max(d.mrrPlus, d.mrrPro, d.mrrUlt || 0);
+    var maiorFonte = (maiorVal === d.mrrUlt && maiorVal > 0) ? "Ultimate" : (d.mrrPlus >= d.mrrPro ? "Plus" : "Pro");
+    var maiorPct = d.mrr ? Math.round(maiorVal / d.mrr * 100) : 0;
+    out.push({ icon: "💰", tone: "ok", titulo: "MRR de " + fmtBRL(d.mrr) + "/mês",
+      texto: d.mrr ? ("Maior fonte: " + maiorFonte + " (" + maiorPct + "% da MRR).") : "Ainda sem assinante pagante — foque em converter os testes em Pro." });
     // 4) Engajamento push
     var covPush = d.total ? Math.round(d.pushAtivos / d.total * 100) : 0;
     if (d.total && covPush < 70) {
