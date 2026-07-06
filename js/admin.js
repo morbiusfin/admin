@@ -30,6 +30,8 @@
   var _pushStatus = {};   // email -> true/false (tem push ativo) · alimenta o sininho por linha
   var _refCounts = {};    // inviter_uid -> nº de pessoas indicadas (tabela referrals)
   var _devCounts = {};    // user_id -> nº de aparelhos registrados (tabela devices)
+  var _conjMemberOf = {}; // member_uid -> owner_uid (esta pessoa é CONVIDADA do cofre de alguém → herda o Ultimate do dono)
+  var _conjHasMembers = {}; // owner_uid -> nº de convidados (esta pessoa é DONA de uma conta conjunta)
   // TESTE GRÁTIS (dias) p/ contas novas — fonte única na tabela 'config'. O app lê; aqui edita.
   var _trialCfg = 7;
   async function loadTrialCfg() {
@@ -328,6 +330,18 @@
       if (!q.error && q.data) q.data.forEach(function (d) { var u = d.user_id; if (u) _devCounts[u] = (_devCounts[u] || 0) + 1; });
     } catch (e) {}   // tabela ainda não existe (devices.sql não rodou) → 0, nada quebra
   }
+  // Conta conjunta: quem é CONVIDADO de quem (tabela vault_members; admin lê tudo via policy vm_admin_sel).
+  // O convidado herda o Ultimate do dono enquanto conectado → o painel mostra isso na linha dele.
+  async function loadConjunta() {
+    _conjMemberOf = {}; _conjHasMembers = {};
+    try {
+      var q = await client().from("vault_members").select("owner_uid,member_uid");
+      if (!q.error && q.data) q.data.forEach(function (r) {
+        if (r.member_uid) _conjMemberOf[r.member_uid] = r.owner_uid;
+        if (r.owner_uid) _conjHasMembers[r.owner_uid] = (_conjHasMembers[r.owner_uid] || 0) + 1;
+      });
+    } catch (e) {}   // tabela/policy não existe (conjunta-supabase.sql não rodou) → vazio, nada quebra
+  }
   // Pergunta ao worker quem tem push ATIVO (inscrição viva). Silencioso: sem a chave do admin salva, pula (sino oculto).
   async function loadPushStatus() {
     _pushStatus = {};
@@ -359,6 +373,7 @@
     try { await loadRefDiscCfg(); } catch (e) {}  // links de desconto por indicação (aba Descontos)
     try { await loadRefCounts(); } catch (e) {}   // nº de indicados por usuário (coluna nas Contas)
     try { await loadDeviceCounts(); } catch (e) {} // nº de aparelhos por usuário (gate multi-dispositivo)
+    try { await loadConjunta(); } catch (e) {}    // pares de conta conjunta (convidado herda Ultimate do dono)
     try { await loadPushStatus(); } catch (e) {}  // sininho de push ativo por usuário
     renderShell();
     startAutoRefresh();
@@ -390,6 +405,11 @@
       // Plano EFETIVO no app: pago com validade vencida → o freemium rebaixou pra Grátis (só bloqueio manual tranca).
       var venc = (function () { if (!l.validade) return false; var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s); return !isNaN(d.getTime()) && d.getTime() < Date.now(); })();
       var caiuGratis = venc && tier !== "teste" && !bloq;   // pago vencido → pessoa usando Grátis agora
+      // Conta conjunta: CONVIDADA (herda Ultimate do dono enquanto conectada) e/ou DONA (tem convidados no cofre).
+      var conjOwnerUid = _conjMemberOf[l.user_id];
+      var conjOwner = conjOwnerUid ? byUid(conjOwnerUid) : null;
+      var conjGuestBadge = conjOwnerUid ? '<span class="ad-conj" title="Convidada de uma conta conjunta' + (conjOwner ? ' (dono: ' + esc(conjOwner.nome || conjOwner.email || '—') + ')' : '') + ' — usa o Ultimate do dono enquanto conectada">💑 Ultimate · conta conjunta</span>' : '';
+      var conjOwnerBadge = _conjHasMembers[l.user_id] ? '<span class="ad-conj own" title="Dona de uma conta conjunta com ' + _conjHasMembers[l.user_id] + ' convidado(s) — cada um usa Ultimate junto">💑 dona · ' + _conjHasMembers[l.user_id] + ' par(es)</span>' : '';
       var planoLbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
       var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
       var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
@@ -415,6 +435,7 @@
             var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>';
           })()
         + (caiuGratis ? '<span class="ad-efetivo" title="A validade venceu — no app esta pessoa está no plano Grátis (rebaixou sozinho). O ' + esc(tNome) + ' comprado segue registrado; renove a data (+30d/+1a) que ele volta.">↓ ativo agora: Grátis</span>' : '')
+        + conjGuestBadge + conjOwnerBadge
         + '</div></div>'
         + '<div class="ad-controls">'
         + '<select data-k="plano" title="Plano">' + planos + '</select>'
