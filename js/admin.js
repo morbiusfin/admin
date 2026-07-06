@@ -66,6 +66,10 @@
     { k: "antecipado", lbl: "Acesso antecipado" },
   ];
   var PLAN_LIST = [{ k: "teste", lbl: "Grátis" }, { k: "plus", lbl: "Plus" }, { k: "pro", lbl: "Pro" }, { k: "ultimate", lbl: "Ultimate" }];
+  var PLAN_COLOR = { teste: "#f5a623", plus: "#15c266", pro: "#46b4ea", ultimate: "#b59bf7" };
+  var PLAN_EMOJI = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" };
+  // ordem de exibição das seções na aba Contas: Ultimate → Pro → Plus → Grátis (maior valor primeiro)
+  var PLAN_ORDER_DESC = ["ultimate", "pro", "plus", "teste"];
   var FEAT_DEF = { teste: {}, plus: { nuvem: true, multidisp: true, graficos: true }, pro: { nuvem: true, multidisp: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, alertas: true }, ultimate: { nuvem: true, multidisp: true, conjunta: true, suporte: true, antecipado: true, graficos: true, insights: true, simulador: true, temas: true, pdf: true, foto: true, alertas: true } };
   var _planFeat = null;
   async function loadPlanFeatCfg() {
@@ -233,9 +237,10 @@
     if (dias === 1) return { txt: "falta 1 dia", cls: "dias-poucos" };
     return { txt: "faltam " + dias + " dias", cls: dias <= 3 ? "dias-poucos" : "dias-ok" };
   }
-  // 2 abas: Contas (lista) e Uso (dash + ranking)
+  // abas: Painel (dashboard) · Contas (lista) · Uso (dash + ranking) · Planos · Acessos · Descontos
   function renderShell() {
     view().innerHTML = '<div class="ad-tabs">'
+      + '<button type="button" class="ad-tab' + (_tab === "painel" ? " on" : "") + '" data-tab="painel">📊 Painel</button>'
       + '<button type="button" class="ad-tab' + (_tab === "contas" ? " on" : "") + '" data-tab="contas">📋 Contas</button>'
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
       + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
@@ -243,7 +248,72 @@
       + '<button type="button" class="ad-tab' + (_tab === "descontos" ? " on" : "") + '" data-tab="descontos">🎁 Descontos</button>'
       + '</div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
-    if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else if (_tab === "descontos") renderDescontos(); else renderTable("");
+    if (_tab === "painel") renderDashboard(); else if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else if (_tab === "descontos") renderDescontos(); else renderTable("");
+  }
+  var _dashCharts = [];   // instâncias Chart.js vivas — destruídas a cada render (senão o Chart.js empilha canvas fantasma)
+  function destroyDashCharts() { _dashCharts.forEach(function (ch) { try { ch.destroy(); } catch (e) {} }); _dashCharts = []; }
+  // Aba PAINEL: dashboard com KPIs + gráficos (distribuição por plano, recursos liberados, heatmap recurso×plano).
+  function renderDashboard() {
+    var c = content(); if (!c) return;
+    destroyDashCharts();
+    var total = _all.length;
+    var bloqueados = _all.filter(function (l) { return l.status === "bloqueado"; }).length;
+    var ativos = total - bloqueados;
+    var porPlano = {}; PLAN_LIST.forEach(function (p) { porPlano[p.k] = 0; });
+    _all.forEach(function (l) { var t = l.plano || "teste"; porPlano[t] = (porPlano[t] || 0) + 1; });
+    var vencidos = _all.filter(function (l) {
+      if (!l.validade || l.status === "bloqueado") return false;
+      var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+      return !isNaN(d.getTime()) && d.getTime() < Date.now();
+    }).length;
+    var pushAtivos = Object.keys(_pushStatus).filter(function (k) { return _pushStatus[k] === true; }).length;
+    var kpis = [
+      { emoji: "👥", n: total, lab: "Total de contas", cls: "" },
+      { emoji: "✅", n: ativos, lab: "Ativas", cls: "k-ok" },
+      { emoji: "🚫", n: bloqueados, lab: "Bloqueadas", cls: bloqueados ? "k-warn" : "" },
+      { emoji: "👑", n: porPlano.ultimate || 0, lab: "Ultimate", cls: "" },
+      { emoji: "🚀", n: porPlano.pro || 0, lab: "Pro", cls: "" },
+      { emoji: "⭐", n: porPlano.plus || 0, lab: "Plus", cls: "" },
+      { emoji: "🌱", n: porPlano.teste || 0, lab: "Grátis", cls: "" },
+      { emoji: "🔔", n: pushAtivos, lab: "Push ativo", cls: "" },
+      { emoji: "⏰", n: vencidos, lab: "Vencidas (freemium)", cls: vencidos ? "k-warn" : "" }
+    ];
+    var kpiHtml = kpis.map(function (k) { return '<div class="kpi ' + k.cls + '"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+    var feat = planFeatMerged();
+    var featCount = {}; PLAN_LIST.forEach(function (p) { featCount[p.k] = FEATURE_LIST.reduce(function (n, f) { return n + (feat[p.k][f.k] ? 1 : 0); }, 0); });
+    var heatRows = FEATURE_LIST.map(function (f) {
+      return '<tr><td class="heat-flab">' + esc(f.lbl) + '</td>' + PLAN_LIST.map(function (p) {
+        return '<td><span class="heat-dot ' + (feat[p.k][f.k] ? "on" : "off") + '" title="' + esc(p.lbl) + (feat[p.k][f.k] ? ": liberado" : ": bloqueado") + '"></span></td>';
+      }).join("") + '</tr>';
+    }).join("");
+    var heatHead = '<tr><th>Recurso</th>' + PLAN_LIST.map(function (p) { return '<th>' + esc(p.lbl) + '</th>'; }).join("") + '</tr>';
+    c.innerHTML = '<div class="kpi-row">' + kpiHtml + '</div>'
+      + '<div class="dash-grid">'
+      + '<div class="dash-card"><div class="dash-h">🥧 Contas por plano</div><div class="dash-chart-wrap"><canvas id="chPlanos"></canvas></div></div>'
+      + '<div class="dash-card"><div class="dash-h">🔑 Recursos liberados por plano</div><div class="dash-chart-wrap"><canvas id="chFeats"></canvas></div></div>'
+      + '<div class="dash-card full"><div class="dash-h">🗺️ Mapa de recursos × plano</div><div class="heat-wrap"><table class="heat-tbl">' + heatHead + heatRows + '</table></div></div>'
+      + '</div>';
+    if (!(window.Chart)) { adToast("Gráficos indisponíveis (Chart.js não carregou)"); return; }
+    var labels = PLAN_LIST.map(function (p) { return p.lbl; });
+    var colors = PLAN_LIST.map(function (p) { return PLAN_COLOR[p.k]; });
+    var elPlanos = document.getElementById("chPlanos");
+    if (elPlanos) {
+      var chP = new Chart(elPlanos.getContext("2d"), {
+        type: "doughnut",
+        data: { labels: labels, datasets: [{ data: PLAN_LIST.map(function (p) { return porPlano[p.k] || 0; }), backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { boxWidth: 11, padding: 12, font: { family: "Manrope", weight: "700", size: 11.5 }, color: "#8b9a92" } }, tooltip: { callbacks: { label: function (ctx) { var v = ctx.parsed || 0; var pct = total ? Math.round(v / total * 100) : 0; return " " + ctx.label + ": " + v + " (" + pct + "%)"; } } } } }
+      });
+      _dashCharts.push(chP);
+    }
+    var elFeats = document.getElementById("chFeats");
+    if (elFeats) {
+      var chF = new Chart(elFeats.getContext("2d"), {
+        type: "bar",
+        data: { labels: labels, datasets: [{ label: "Recursos liberados", data: PLAN_LIST.map(function (p) { return featCount[p.k]; }), backgroundColor: colors, borderRadius: 8, maxBarThickness: 46 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " de " + FEATURE_LIST.length + " recursos"; } } } }, scales: { y: { beginAtZero: true, max: FEATURE_LIST.length, ticks: { stepSize: 2, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 11.5 } }, grid: { display: false } } } }
+      });
+      _dashCharts.push(chF);
+    }
   }
   function adToast(msg) {
     var t = document.getElementById("adToast");
@@ -379,6 +449,78 @@
     startAutoRefresh();
     try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
   }
+  // estado do menu de opções (filtro/ordenação) + colapso das seções — persiste entre re-renders (auto-refresh 5s)
+  var _ctPlanoF = "todos", _ctStatusF = "todos", _ctSort = "criado_desc";
+  var _groupCollapsed = {};   // plano -> true (fechado). Ausente/false = aberto (default).
+  // monta o cartão .ad-row de UMA conta — MESMO html/atributos de sempre (o bind final continua achando por ".ad-row")
+  function renderRowCard(l) {
+    var bloq = l.status === "bloqueado";
+    var tier = l.plano || "teste";
+    var tEmoji = PLAN_EMOJI[tier] || "broto";
+    var tNome = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
+    var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
+    // Plano EFETIVO no app: pago com validade vencida → o freemium rebaixou pra Grátis (só bloqueio manual tranca).
+    var venc = (function () { if (!l.validade) return false; var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s); return !isNaN(d.getTime()) && d.getTime() < Date.now(); })();
+    var caiuGratis = venc && tier !== "teste" && !bloq;   // pago vencido → pessoa usando Grátis agora
+    // Conta conjunta: CONVIDADA (herda Ultimate do dono enquanto conectada) e/ou DONA (tem convidados no cofre).
+    var conjOwnerUid = _conjMemberOf[l.user_id];
+    var conjOwner = conjOwnerUid ? byUid(conjOwnerUid) : null;
+    var conjGuestBadge = conjOwnerUid ? '<span class="ad-conj" title="Convidada de uma conta conjunta' + (conjOwner ? ' (dono: ' + esc(conjOwner.nome || conjOwner.email || '—') + ')' : '') + ' — usa o Ultimate do dono enquanto conectada">💑 Ultimate · conta conjunta</span>' : '';
+    var conjOwnerBadge = _conjHasMembers[l.user_id] ? '<span class="ad-conj own" title="Dona de uma conta conjunta com ' + _conjHasMembers[l.user_id] + ' convidado(s) — cada um usa Ultimate junto">💑 dona · ' + _conjHasMembers[l.user_id] + ' par(es)</span>' : '';
+    var planoLbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
+    var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
+    var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
+    var telTxt = (l.telefone && String(l.telefone).trim()) ? '<div class="ad-tel">📱 ' + esc(l.telefone) + '</div>' : '';
+    var nascTxt = (l.nascimento && String(l.nascimento).trim()) ? '<div class="ad-tel">🎂 ' + esc(fmtNasc(l.nascimento)) + '</div>' : '';
+    // Sininho: a pessoa ativou push? (true=chega recado / false=não ativou / undefined=chave do admin não informada → oculto)
+    var pon = _pushStatus[(l.email || "").trim().toLowerCase()];
+    var bell = (pon === true) ? ' <span class="ad-bell on" title="Push ATIVO — seus recados chegam nesta pessoa">🔔</span>'
+             : (pon === false) ? ' <span class="ad-bell off" title="SEM push — a pessoa ainda não ativou/entrou no app; recado não chega">🔕</span>' : '';
+    // Indicações: quantas pessoas esse usuário trouxe + link de convite dele.
+    var rc = _refCounts[l.user_id] || 0;
+    var dc = _devCounts[l.user_id] || 0;
+    var refLine = '<div class="ad-ref">👥 <b>' + rc + '</b> indicado' + (rc === 1 ? '' : 's')
+      + ' · 📱 <b>' + dc + '</b> aparelho' + (dc === 1 ? '' : 's')
+      + ' · <button type="button" class="ad-reflink" data-uid="' + esc(l.user_id) + '" title="Copiar o link de indicação desta pessoa">🔗 link</button></div>';
+    return '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
+      + '<div><div class="ad-name">' + nomeTxt + bell + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt + refLine
+      + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
+      + '<span>criado ' + fmtDate(l.criado_em) + '</span>'
+      + ((l.validade && !(tier === "teste" && venc)) ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '')
+      + (function () {
+          if (tier === "teste") { if (!l.validade || venc) return '<span class="ad-dias dias-vit">Grátis</span>'; var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + ' de teste</span>'; }
+          var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>';
+        })()
+      + (caiuGratis ? '<span class="ad-efetivo" title="A validade venceu — no app esta pessoa está no plano Grátis (rebaixou sozinho). O ' + esc(tNome) + ' comprado segue registrado; renove a data (+30d/+1a) que ele volta.">↓ ativo agora: Grátis</span>' : '')
+      + conjGuestBadge + conjOwnerBadge
+      + '</div></div>'
+      + '<div class="ad-controls">'
+      + '<select data-k="plano" title="Plano">' + planos + '</select>'
+      + '<label class="ad-datelbl">Expira (bloqueia ao vencer)<input type="date" data-k="validade" title="Data em que o acesso expira e bloqueia. Vazio = vitalício." value="' + (l.validade ? String(l.validade).slice(0, 10) : "") + '"></label>'
+      + '<div class="ad-quick"><button class="btn ghost sm" data-act="plus30" title="+30 dias">+30d</button>'
+      + '<button class="btn ghost sm" data-act="plus1y" title="+1 ano">+1a</button>'
+      + '<button class="btn ghost sm" data-act="vitalicio" title="Vitalício (sem validade)">Vit.</button></div>'
+      + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Ativar" : "Bloquear") + '</button>'
+      + '<button class="btn primary sm" data-act="save">Salvar</button>'
+      + '<button class="btn ghost sm" data-act="feats" title="Acessos desta pessoa (override do plano)">🔑</button>'
+      + '</div></div>';
+  }
+  // ordena a lista já filtrada conforme o menu de opções
+  function sortRows(rows) {
+    var arr = rows.slice();
+    function safeTime(v) { if (!v) return NaN; var d = new Date(v); return isNaN(d.getTime()) ? NaN : d.getTime(); }
+    if (_ctSort === "nome_asc") {
+      arr.sort(function (a, b) { return (a.nome || a.email || "").toLowerCase().localeCompare((b.nome || b.email || "").toLowerCase(), "pt-BR"); });
+    } else if (_ctSort === "exp_asc") {
+      // vitalício (sem validade) vai pro fim — quem vence primeiro aparece no topo
+      arr.sort(function (a, b) { var ta = safeTime(a.validade), tb = safeTime(b.validade); if (isNaN(ta) && isNaN(tb)) return 0; if (isNaN(ta)) return 1; if (isNaN(tb)) return -1; return ta - tb; });
+    } else if (_ctSort === "criado_asc") {
+      arr.sort(function (a, b) { var ta = safeTime(a.criado_em) || 0, tb = safeTime(b.criado_em) || 0; return ta - tb; });
+    } else {   // criado_desc (default) — igual à ordem que já vinha da query (mais recente primeiro)
+      arr.sort(function (a, b) { var ta = safeTime(a.criado_em) || 0, tb = safeTime(b.criado_em) || 0; return tb - ta; });
+    }
+    return arr;
+  }
   function renderTable(filter) {
     var f = (filter || "").trim().toLowerCase();
     var rows = _all.filter(function (l) {
@@ -388,71 +530,77 @@
         || String(l.nome || "").toLowerCase().indexOf(f) >= 0
         || (!!fd && String(l.telefone || "").replace(/\D/g, "").indexOf(fd) >= 0);
     });
+    // menu de opções: filtro por plano + status. "Plano: todos" mostra as 4 seções; um plano específico só mostra a seção dele.
+    rows = rows.filter(function (l) {
+      if (_ctPlanoF !== "todos" && (l.plano || "teste") !== _ctPlanoF) return false;
+      if (_ctStatusF === "bloqueado") return l.status === "bloqueado";
+      if (_ctStatusF === "ativo") return l.status !== "bloqueado";
+      if (_ctStatusF === "vencido") { if (!l.validade) return false; var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s); return !isNaN(d.getTime()) && d.getTime() < Date.now() && l.status !== "bloqueado"; }
+      return true;
+    });
+    rows = sortRows(rows);
     var ativos = _all.filter(function (l) { return l.status !== "bloqueado"; }).length;
     var html = '<div class="ad-toolbar"><input id="adSearch" class="ad-search" placeholder="Buscar nome, email ou telefone…" value="' + esc(filter || "") + '">'
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
       + '<button class="btn ghost sm" id="adNotify">🔔 Notificar</button>'
       + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div>'
       + '<div class="ad-trial">🎁 <b>Teste grátis</b> p/ contas novas: <input id="adTrialDays" type="number" min="0" max="365" inputmode="numeric" value="' + _trialCfg + '"> dias <button type="button" class="btn ghost sm" id="adTrialSave">Salvar</button><span id="adTrialMsg" class="ad-trial-msg"></span></div>'
-      + '<div class="ad-rows">';
-    if (!rows.length) html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f ? " pra esse filtro" : " ainda") + '.</div></div>';
-    rows.forEach(function (l) {
-      var bloq = l.status === "bloqueado";
-      var tier = l.plano || "teste";
-      var tEmoji = { teste: "broto", plus: "estrela", pro: "foguete", ultimate: "coroa" }[tier] || "broto";
-      var tNome = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[tier] || tier;
-      var tierPill = '<span class="tier tier-' + esc(tier) + '"><img src="https://morbiusfin.github.io/emoji/' + tEmoji + '.webp" alt="" loading="lazy" draggable="false">' + esc(tNome) + '</span>';
-      // Plano EFETIVO no app: pago com validade vencida → o freemium rebaixou pra Grátis (só bloqueio manual tranca).
-      var venc = (function () { if (!l.validade) return false; var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s); return !isNaN(d.getTime()) && d.getTime() < Date.now(); })();
-      var caiuGratis = venc && tier !== "teste" && !bloq;   // pago vencido → pessoa usando Grátis agora
-      // Conta conjunta: CONVIDADA (herda Ultimate do dono enquanto conectada) e/ou DONA (tem convidados no cofre).
-      var conjOwnerUid = _conjMemberOf[l.user_id];
-      var conjOwner = conjOwnerUid ? byUid(conjOwnerUid) : null;
-      var conjGuestBadge = conjOwnerUid ? '<span class="ad-conj" title="Convidada de uma conta conjunta' + (conjOwner ? ' (dono: ' + esc(conjOwner.nome || conjOwner.email || '—') + ')' : '') + ' — usa o Ultimate do dono enquanto conectada">💑 Ultimate · conta conjunta</span>' : '';
-      var conjOwnerBadge = _conjHasMembers[l.user_id] ? '<span class="ad-conj own" title="Dona de uma conta conjunta com ' + _conjHasMembers[l.user_id] + ' convidado(s) — cada um usa Ultimate junto">💑 dona · ' + _conjHasMembers[l.user_id] + ' par(es)</span>' : '';
-      var planoLbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
-      var planos = ["teste", "plus", "pro", "ultimate"].map(function (p) { return '<option value="' + p + '"' + (l.plano === p ? " selected" : "") + '>' + (planoLbl[p] || p) + '</option>'; }).join("");
-      var nomeTxt = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
-      var telTxt = (l.telefone && String(l.telefone).trim()) ? '<div class="ad-tel">📱 ' + esc(l.telefone) + '</div>' : '';
-      var nascTxt = (l.nascimento && String(l.nascimento).trim()) ? '<div class="ad-tel">🎂 ' + esc(fmtNasc(l.nascimento)) + '</div>' : '';
-      // Sininho: a pessoa ativou push? (true=chega recado / false=não ativou / undefined=chave do admin não informada → oculto)
-      var pon = _pushStatus[(l.email || "").trim().toLowerCase()];
-      var bell = (pon === true) ? ' <span class="ad-bell on" title="Push ATIVO — seus recados chegam nesta pessoa">🔔</span>'
-               : (pon === false) ? ' <span class="ad-bell off" title="SEM push — a pessoa ainda não ativou/entrou no app; recado não chega">🔕</span>' : '';
-      // Indicações: quantas pessoas esse usuário trouxe + link de convite dele.
-      var rc = _refCounts[l.user_id] || 0;
-      var dc = _devCounts[l.user_id] || 0;
-      var refLine = '<div class="ad-ref">👥 <b>' + rc + '</b> indicado' + (rc === 1 ? '' : 's')
-        + ' · 📱 <b>' + dc + '</b> aparelho' + (dc === 1 ? '' : 's')
-        + ' · <button type="button" class="ad-reflink" data-uid="' + esc(l.user_id) + '" title="Copiar o link de indicação desta pessoa">🔗 link</button></div>';
-      html += '<div class="ad-row row-' + esc(tier) + '" data-uid="' + esc(l.user_id) + '">'
-        + '<div><div class="ad-name">' + nomeTxt + bell + '</div><div class="ad-email">' + esc(l.email || "(sem email)") + '</div>' + telTxt + nascTxt + refLine
-        + '<div class="ad-sub">' + tierPill + '<span class="pill ' + (bloq ? "bloqueado" : "ativo") + '">' + (bloq ? "bloqueado" : "ativo") + '</span>'
-        + '<span>criado ' + fmtDate(l.criado_em) + '</span>'
-        + ((l.validade && !(tier === "teste" && venc)) ? '<span>· vence ' + fmtDate(l.validade) + '</span>' : '')
-        + (function () {
-            if (tier === "teste") { if (!l.validade || venc) return '<span class="ad-dias dias-vit">Grátis</span>'; var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + ' de teste</span>'; }
-            var di = diasInfo(l.validade); return '<span class="ad-dias ' + di.cls + '">' + di.txt + '</span>';
-          })()
-        + (caiuGratis ? '<span class="ad-efetivo" title="A validade venceu — no app esta pessoa está no plano Grátis (rebaixou sozinho). O ' + esc(tNome) + ' comprado segue registrado; renove a data (+30d/+1a) que ele volta.">↓ ativo agora: Grátis</span>' : '')
-        + conjGuestBadge + conjOwnerBadge
-        + '</div></div>'
-        + '<div class="ad-controls">'
-        + '<select data-k="plano" title="Plano">' + planos + '</select>'
-        + '<label class="ad-datelbl">Expira (bloqueia ao vencer)<input type="date" data-k="validade" title="Data em que o acesso expira e bloqueia. Vazio = vitalício." value="' + (l.validade ? String(l.validade).slice(0, 10) : "") + '"></label>'
-        + '<div class="ad-quick"><button class="btn ghost sm" data-act="plus30" title="+30 dias">+30d</button>'
-        + '<button class="btn ghost sm" data-act="plus1y" title="+1 ano">+1a</button>'
-        + '<button class="btn ghost sm" data-act="vitalicio" title="Vitalício (sem validade)">Vit.</button></div>'
-        + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Ativar" : "Bloquear") + '</button>'
-        + '<button class="btn primary sm" data-act="save">Salvar</button>'
-        + '<button class="btn ghost sm" data-act="feats" title="Acessos desta pessoa (override do plano)">🔑</button>'
-        + '</div></div>';
-    });
-    html += '</div>';
+      + '<div class="ad-menubar">'
+      + '<div class="ad-mgroup"><label for="ctFPlano">Plano</label><select id="ctFPlano">'
+      + '<option value="todos"' + (_ctPlanoF === "todos" ? " selected" : "") + '>Todos</option>'
+      + PLAN_ORDER_DESC.map(function (p) { var lbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[p]; return '<option value="' + p + '"' + (_ctPlanoF === p ? " selected" : "") + '>' + lbl + '</option>'; }).join("")
+      + '</select></div>'
+      + '<div class="ad-mgroup"><label for="ctFStatus">Status</label><select id="ctFStatus">'
+      + '<option value="todos"' + (_ctStatusF === "todos" ? " selected" : "") + '>Todos</option>'
+      + '<option value="ativo"' + (_ctStatusF === "ativo" ? " selected" : "") + '>Ativo</option>'
+      + '<option value="bloqueado"' + (_ctStatusF === "bloqueado" ? " selected" : "") + '>Bloqueado</option>'
+      + '<option value="vencido"' + (_ctStatusF === "vencido" ? " selected" : "") + '>Vencido</option>'
+      + '</select></div>'
+      + '<div class="ad-mgroup"><label for="ctSort">Ordenar</label><select id="ctSort">'
+      + '<option value="criado_desc"' + (_ctSort === "criado_desc" ? " selected" : "") + '>Mais recentes</option>'
+      + '<option value="criado_asc"' + (_ctSort === "criado_asc" ? " selected" : "") + '>Mais antigos</option>'
+      + '<option value="nome_asc"' + (_ctSort === "nome_asc" ? " selected" : "") + '>Nome (A-Z)</option>'
+      + '<option value="exp_asc"' + (_ctSort === "exp_asc" ? " selected" : "") + '>Expira primeiro</option>'
+      + '</select></div>'
+      + '<div class="ad-mspacer"></div><span class="ad-mcount">' + rows.length + ' de ' + _all.length + '</span>'
+      + '</div>';
+    if (!rows.length) {
+      html += '<div class="ad-card"><div class="ad-empty">Nenhuma conta' + (f || _ctStatusF !== "todos" || _ctPlanoF !== "todos" ? " pra esse filtro" : " ainda") + '.</div></div>';
+    } else {
+      var planosMostrar = _ctPlanoF === "todos" ? PLAN_ORDER_DESC : [_ctPlanoF];
+      var byPlano = {}; PLAN_ORDER_DESC.forEach(function (p) { byPlano[p] = []; });
+      rows.forEach(function (l) { var t = l.plano || "teste"; (byPlano[t] || (byPlano[t] = [])).push(l); });
+      html += '<div class="ad-groups">';
+      planosMostrar.forEach(function (p) {
+        var lista = byPlano[p] || [];
+        if (!lista.length) return;   // seção some quando o filtro/busca zera ela
+        var lbl = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" }[p] || p;
+        var emoji = { teste: "🌱", plus: "⭐", pro: "🚀", ultimate: "👑" }[p] || "";
+        var nAtivos = lista.filter(function (l) { return l.status !== "bloqueado"; }).length;
+        var nBloq = lista.length - nAtivos;
+        var sub = nBloq ? ('<span class="ok">' + nAtivos + ' ativa' + (nAtivos === 1 ? '' : 's') + '</span> · <span class="bad">' + nBloq + ' bloqueada' + (nBloq === 1 ? '' : 's') + '</span>') : ('<span class="ok">' + nAtivos + ' ativa' + (nAtivos === 1 ? '' : 's') + '</span>');
+        var closed = !!_groupCollapsed[p];
+        html += '<div class="ad-group' + (closed ? ' closed' : '') + '" data-plano="' + p + '">'
+          + '<div class="ad-ghead" data-toggle-plano="' + p + '"><span class="ad-ghead-bar" style="background:' + PLAN_COLOR[p] + '"></span>'
+          + '<span class="ad-ghead-tier">' + emoji + ' ' + esc(lbl) + '</span>'
+          + '<span class="ad-ghead-count">' + lista.length + '</span>'
+          + '<span class="ad-ghead-sub">' + sub + '</span>'
+          + '<span class="ad-ghead-chev">▾</span></div>'
+          + '<div class="ad-rows">' + lista.map(renderRowCard).join("") + '</div>'
+          + '</div>';
+      });
+      html += '</div>';
+    }
     var c = content(); if (c) c.innerHTML = html; else view().innerHTML = html;
     var s = $("#adSearch"); if (s) s.oninput = function (e) { renderKeepFocus(e.target.value); };
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
     var nt = $("#adNotify"); if (nt) nt.onclick = openNotify;
+    var fp = $("#ctFPlano"); if (fp) fp.onchange = function () { _ctPlanoF = fp.value; renderTable(f); };
+    var fs = $("#ctFStatus"); if (fs) fs.onchange = function () { _ctStatusF = fs.value; renderTable(f); };
+    var so = $("#ctSort"); if (so) so.onchange = function () { _ctSort = so.value; renderTable(f); };
+    document.querySelectorAll("[data-toggle-plano]").forEach(function (h) {
+      h.onclick = function () { var p = h.dataset.togglePlano; _groupCollapsed[p] = !_groupCollapsed[p]; var grp = document.querySelector('.ad-group[data-plano="' + p + '"]'); if (grp) grp.classList.toggle("closed", !!_groupCollapsed[p]); };
+    });
     var tsv = $("#adTrialSave");
     if (tsv) tsv.onclick = async function () {
       var n = parseInt(($("#adTrialDays") || {}).value, 10);

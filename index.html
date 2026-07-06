@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     .ad-wrap { max-width: 920px; margin: 0 auto; padding: calc(20px + var(--safe-top)) 16px 40px; }
     .ad-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -174,6 +175,59 @@
     .ad-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: var(--accent); color: #06281c; font-weight: 800; font-size: 13.5px; padding: 11px 18px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; z-index: 9999; max-width: 90vw; text-align: center; }
     .ad-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     @media (max-width: 560px) { .ad-row { grid-template-columns: 1fr; } .ad-controls { justify-content: flex-start; } }
+
+    /* ===== Menu de opções (filtro/ordenação) — aba Contas ===== */
+    .ad-menubar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; }
+    .ad-menubar .ad-mgroup { display: flex; align-items: center; gap: 6px; }
+    .ad-menubar label { font-size: 11.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+    .ad-menubar select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .ad-menubar select:focus { outline: none; border-color: var(--accent); }
+    .ad-mspacer { flex: 1; }
+    .ad-mcount { font-size: 12px; color: var(--muted); font-weight: 700; }
+
+    /* ===== Seções de plano (agrupamento) — aba Contas ===== */
+    .ad-groups { display: flex; flex-direction: column; gap: 16px; }
+    .ad-group { display: flex; flex-direction: column; gap: 10px; }
+    .ad-ghead { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px 4px; border-radius: 10px; user-select: none; -webkit-user-select: none; }
+    .ad-ghead:active { background: var(--card-2); }
+    .ad-ghead-bar { width: 5px; align-self: stretch; border-radius: 4px; flex: 0 0 auto; min-height: 22px; }
+    .ad-ghead-tier { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 15.5px; color: var(--ink); }
+    .ad-ghead-tier img { width: 19px; height: 19px; object-fit: contain; }
+    .ad-ghead-count { font-size: 12px; font-weight: 800; color: var(--muted); background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+    .ad-ghead-sub { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+    .ad-ghead-sub .ok { color: var(--accent, #15c266); }
+    .ad-ghead-sub .bad { color: var(--red); }
+    .ad-ghead-chev { margin-left: auto; font-size: 12px; color: var(--muted); transition: transform .2s ease; flex: 0 0 auto; }
+    .ad-group.closed .ad-ghead-chev { transform: rotate(-90deg); }
+    .ad-group.closed .ad-rows { display: none; }
+    .ad-group-empty { text-align: center; color: var(--muted); font-size: 12.5px; padding: 14px 10px; background: var(--card-2); border: 1px dashed var(--line); border-radius: 12px; }
+
+    /* ===== Dashboard (aba Painel) ===== */
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 12px; box-shadow: var(--shadow); }
+    .kpi-emoji { font-size: 16px; line-height: 1; margin-bottom: 6px; }
+    .kpi-num { font-size: 22px; font-weight: 800; letter-spacing: -.4px; line-height: 1; color: var(--ink); }
+    .kpi-lab { margin-top: 5px; font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+    .kpi.k-warn .kpi-num { color: var(--red); }
+    .kpi.k-ok .kpi-num { color: var(--accent); }
+    .dash-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 720px) { .dash-grid { grid-template-columns: 1fr 1fr; } }
+    .dash-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; }
+    .dash-card.full { grid-column: 1 / -1; }
+    .dash-h { font-weight: 800; font-size: 14.5px; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
+    .dash-chart-wrap { position: relative; height: 220px; }
+    .dash-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; justify-content: center; }
+    .dash-leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ink); }
+    .dash-leg-dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+    /* heatmap recurso x plano */
+    .heat-wrap { overflow-x: auto; }
+    .heat-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .heat-tbl th, .heat-tbl td { padding: 7px 5px; text-align: center; border-bottom: 1px solid var(--line); }
+    .heat-tbl th { color: var(--muted); font-weight: 800; font-size: 11px; }
+    .heat-tbl td.heat-flab { text-align: left; color: var(--ink); font-weight: 600; white-space: nowrap; font-size: 11.5px; }
+    .heat-dot { display: inline-block; width: 16px; height: 16px; border-radius: 5px; }
+    .heat-dot.on { background: var(--accent, #15c266); }
+    .heat-dot.off { background: var(--line); }
   </style>
 </head>
 <body>
