@@ -52,10 +52,11 @@
   function fmtNasc(s) { s = String(s || ""); var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[3] + "/" + m[2] + "/" + m[1]) : s; }   // "1996-04-18" -> "18/04/1996"
 
   // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
+  // Só mensal (Plus/Pro) + pagamento único vitalício (Ultimate). Sem ciclo anual.
   var PLANOS_DEF = [
-    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", preco_anual: "R$ 79,90/ano", link_mensal: "https://mpago.la/1v75rri", link_anual: "https://mpago.la/1jMBXjG" },
-    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 16,90/mês", preco_anual: "R$ 149,90/ano", link_mensal: "https://mpago.la/348pX4C", link_anual: "https://mpago.la/2N3VVMp" },
-    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 199,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw", link_anual: "https://mpago.la/17axJzb" },
+    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", link_mensal: "https://mpago.la/1v75rri" },
+    { id: "pro", nome: "Pro", desc: "Tudo do Plus + suporte prioritário + acesso antecipado às novidades", preco_mensal: "R$ 16,90/mês", link_mensal: "https://mpago.la/348pX4C" },
+    { id: "ultimate", nome: "Ultimate", unico: true, desc: "Tudo do Pro, vitalício + novidades futuras", preco_unico: "R$ 199,90 (pagamento único)", link_mensal: "https://mpago.la/17XLZZw" },
   ];
   var _planosCfg = null;
   async function loadPlanosCfg() {
@@ -212,20 +213,18 @@
     var blocks = ps.map(function (p) {
       var precoRow = p.unico
         ? plFld(p.id, "preco_unico", "Preço (pagamento único)", p.preco_unico)
-        : plFld(p.id, "preco_mensal", "Preço mensal", p.preco_mensal) + plFld(p.id, "preco_anual", "Preço anual", p.preco_anual);
-      var linkM = p.unico ? "Link pagamento (ciclo Mensal)" : "Link pagamento mensal";
-      var linkA = p.unico ? "Link pagamento (ciclo Anual)" : "Link pagamento anual";
+        : plFld(p.id, "preco_mensal", "Preço mensal", p.preco_mensal);
+      var linkM = p.unico ? "Link pagamento (pagamento único)" : "Link pagamento mensal";
       return '<div class="pl-card">'
         + '<div class="pl-h">' + esc(p.nome) + ' <span class="pl-id">' + esc(p.id) + '</span></div>'
         + plFld(p.id, "nome", "Nome", p.nome)
         + plFld(p.id, "desc", "Descrição", p.desc)
         + precoRow
         + plFld(p.id, "link_mensal", linkM, p.link_mensal)
-        + plFld(p.id, "link_anual", linkA, p.link_anual)
         + '</div>';
     }).join("");
     c.innerHTML = '<div class="ad-card">'
-      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). <b>Salvar</b> publica direto no app de produção.</div>'
+      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). Só mensal (Plus/Pro) + pagamento único vitalício (Ultimate). <b>Salvar</b> publica direto no app de produção.</div>'
       + blocks
       + '<div class="pl-save-row"><button type="button" class="btn primary" id="plSave">Salvar e publicar</button><span id="plMsg" class="ad-trial-msg"></span></div>'
       + '<div class="pl-note">Preço é texto livre (ex.: "R$ 9,90/mês"). Link vazio → botão mostra "Em breve" no app. Cor e selo do plano seguem fixos.</div>'
@@ -234,8 +233,8 @@
     sv.onclick = async function () {
       var out = ps.map(function (p) {
         function g(k) { var el = c.querySelector('[data-pl="' + p.id + '-' + k + '"]'); return el ? el.value.trim() : ""; }
-        var o = { id: p.id, nome: g("nome"), desc: g("desc"), link_mensal: g("link_mensal"), link_anual: g("link_anual") };
-        if (p.unico) { o.unico = true; o.preco_unico = g("preco_unico"); } else { o.preco_mensal = g("preco_mensal"); o.preco_anual = g("preco_anual"); }
+        var o = { id: p.id, nome: g("nome"), desc: g("desc"), link_mensal: g("link_mensal") };
+        if (p.unico) { o.unico = true; o.preco_unico = g("preco_unico"); } else { o.preco_mensal = g("preco_mensal"); }
         return o;
       });
       var msg = c.querySelector("#plMsg");
