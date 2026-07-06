@@ -44,10 +44,21 @@
   var _devCounts = {};    // user_id -> nº de aparelhos registrados (tabela devices)
   var _conjMemberOf = {}; // member_uid -> owner_uid (esta pessoa é CONVIDADA do cofre de alguém → herda o Ultimate do dono)
   var _conjHasMembers = {}; // owner_uid -> nº de convidados (esta pessoa é DONA de uma conta conjunta)
-  // TESTE GRÁTIS (dias) p/ contas novas — fonte única na tabela 'config'. O app lê; aqui edita.
-  var _trialCfg = 7;
+  // TESTE GRÁTIS = 15 dias FIXO (Pro liberado → depois cai pro Grátis). Não é mais editável; o admin GARANTE 15 no config.
+  var _trialCfg = 15;
+  // REENGAJAMENTO: notificar quem não abre o app há N dias (o worker lê no cron). Editável aqui.
+  var _reengageCfg = 7;
   async function loadTrialCfg() {
-    try { var q = await client().from("config").select("v").eq("k", "trial_days").limit(1); if (!q.error && q.data && q.data[0]) { var n = parseInt(q.data[0].v, 10); if (n >= 0 && n <= 365) _trialCfg = n; } } catch (e) {}
+    try {
+      var q = await client().from("config").select("k,v").in("k", ["trial_days", "reengage_days"]);
+      if (!q.error && q.data) {
+        var tri = q.data.find(function (x) { return x.k === "trial_days"; });
+        var re = q.data.find(function (x) { return x.k === "reengage_days"; });
+        if (re) { var rn = parseInt(re.v, 10); if (rn >= 1 && rn <= 90) _reengageCfg = rn; }
+        // trial FIXO em 15: se o config estiver diferente (7/10/etc), corrige uma vez.
+        if (!tri || parseInt(tri.v, 10) !== 15) { try { await client().from("config").upsert({ k: "trial_days", v: "15" }); } catch (e) {} }
+      }
+    } catch (e) {}
   }
   function fmtNasc(s) { s = String(s || ""); var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[3] + "/" + m[2] + "/" + m[1]) : s; }   // "1996-04-18" -> "18/04/1996"
 
@@ -938,6 +949,7 @@
       + '<button class="btn ' + (bloq ? "primary" : "ghost") + ' sm" data-act="toggle">' + (bloq ? "Ativar" : "Bloquear") + '</button>'
       + '<button class="btn primary sm" data-act="save">Salvar</button>'
       + '<button class="btn ghost sm" data-act="feats" title="Acessos desta pessoa (override do plano)">🔑</button>'
+      + (l.email ? '<button class="btn ghost sm" data-act="notifyone" title="Notificar só esta pessoa">🔔</button>' : '')
       + '</div></div>';
   }
   // ordena a lista já filtrada conforme o menu de opções
@@ -979,7 +991,8 @@
       + '<span class="ad-stat">' + _all.length + ' conta(s) · ' + ativos + ' ativa(s)</span>'
       + '<button class="btn ghost sm" id="adNotify">🔔 Notificar</button>'
       + '<button class="btn ghost sm" id="adReload">↻ Atualizar</button></div>'
-      + '<div class="ad-trial">🎁 <b>Teste grátis</b> p/ contas novas: <input id="adTrialDays" type="number" min="0" max="365" inputmode="numeric" value="' + _trialCfg + '"> dias <button type="button" class="btn ghost sm" id="adTrialSave">Salvar</button><span id="adTrialMsg" class="ad-trial-msg"></span></div>'
+      + '<div class="ad-trial">🎁 <b>Teste grátis:</b> 15 dias de Pro (fixo) pras contas novas · depois cai pro Grátis</div>'
+      + '<div class="ad-trial">🔕 <b>Reengajamento:</b> notificar quem não abre o app há <input id="adReengageDays" type="number" min="1" max="90" inputmode="numeric" value="' + _reengageCfg + '"> dias <button type="button" class="btn ghost sm" id="adReengageSave">Salvar</button><span id="adReengageMsg" class="ad-trial-msg"></span></div>'
       + '<div class="ad-menubar">'
       + '<div class="ad-mgroup"><label for="ctFPlano">Plano</label><select id="ctFPlano">'
       + '<option value="todos"' + (_ctPlanoF === "todos" ? " selected" : "") + '>Todos</option>'
@@ -1029,25 +1042,25 @@
     var c = content(); if (c) c.innerHTML = html; else view().innerHTML = html;
     var s = $("#adSearch"); if (s) s.oninput = function (e) { renderKeepFocus(e.target.value); };
     var rl = $("#adReload"); if (rl) rl.onclick = function () { showPanel(_email); };
-    var nt = $("#adNotify"); if (nt) nt.onclick = openNotify;
+    var nt = $("#adNotify"); if (nt) nt.onclick = function () { openNotify(); };   // sem arg = recado GERAL
     var fp = $("#ctFPlano"); if (fp) fp.onchange = function () { _ctPlanoF = fp.value; renderTable(f); };
     var fs = $("#ctFStatus"); if (fs) fs.onchange = function () { _ctStatusF = fs.value; renderTable(f); };
     var so = $("#ctSort"); if (so) so.onchange = function () { _ctSort = so.value; renderTable(f); };
     document.querySelectorAll("[data-toggle-plano]").forEach(function (h) {
       h.onclick = function () { var p = h.dataset.togglePlano; _groupCollapsed[p] = !_groupCollapsed[p]; var grp = document.querySelector('.ad-group[data-plano="' + p + '"]'); if (grp) grp.classList.toggle("closed", !!_groupCollapsed[p]); };
     });
-    var tsv = $("#adTrialSave");
-    if (tsv) tsv.onclick = async function () {
-      var n = parseInt(($("#adTrialDays") || {}).value, 10);
-      var tm = $("#adTrialMsg");
-      if (!(n >= 0 && n <= 365)) { if (tm) { tm.textContent = "use 0 a 365"; tm.className = "ad-trial-msg bad"; } return; }
-      tsv.disabled = true; tsv.textContent = "…";
-      var r = await client().from("config").upsert({ k: "trial_days", v: String(n) }).select();
-      tsv.disabled = false; tsv.textContent = "Salvar";
-      if (r.error) { if (tm) { tm.textContent = "Erro — rodou o SQL trial-config?"; tm.className = "ad-trial-msg bad"; } return; }
-      _trialCfg = n;
-      if (tm) { tm.textContent = "✓ salvo · vale pras próximas contas"; tm.className = "ad-trial-msg ok"; }
-      adToast("🎁 Teste grátis: " + n + " dia(s)");
+    var rsv = $("#adReengageSave");
+    if (rsv) rsv.onclick = async function () {
+      var n = parseInt(($("#adReengageDays") || {}).value, 10);
+      var tm = $("#adReengageMsg");
+      if (!(n >= 1 && n <= 90)) { if (tm) { tm.textContent = "use 1 a 90"; tm.className = "ad-trial-msg bad"; } return; }
+      rsv.disabled = true; rsv.textContent = "…";
+      var r = await client().from("config").upsert({ k: "reengage_days", v: String(n) }).select();
+      rsv.disabled = false; rsv.textContent = "Salvar";
+      if (r.error) { if (tm) { tm.textContent = "Erro ao salvar"; tm.className = "ad-trial-msg bad"; } return; }
+      _reengageCfg = n;
+      if (tm) { tm.textContent = "✓ salvo · o worker usa no reengajamento"; tm.className = "ad-trial-msg ok"; }
+      adToast("🔕 Reengajamento: " + n + " dia(s) sem uso");
     };
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
@@ -1061,6 +1074,7 @@
       row.querySelector('[data-act="plus1y"]').onclick = function () { shiftValidade(uid, row, 365); };
       row.querySelector('[data-act="vitalicio"]').onclick = function () { setVitalicio(uid, row); };
       var fb = row.querySelector('[data-act="feats"]'); if (fb) fb.onclick = function () { openUserFeatures(uid); };
+      var nb = row.querySelector('[data-act="notifyone"]'); if (nb) nb.onclick = function () { var lic = _all.find(function (x) { return x.user_id === uid; }); if (lic && lic.email) openNotify(lic.email); };
       var rlk = row.querySelector('.ad-reflink'); if (rlk) rlk.onclick = function () {
         var link = "https://morbiusfin.github.io/?ref=" + encodeURIComponent(this.dataset.uid);
         try { navigator.clipboard.writeText(link); } catch (e) {}
@@ -1196,15 +1210,23 @@
     { lbl: "🔔 Contas a vencer", txt: "Você tem contas chegando perto do vencimento 👀 Confere no MorbiusFin pra não pagar juros 💸" },
     { lbl: "🎯 Metas", txt: "Bora chegar mais perto das suas metas? 🎯 Registra os gastos de hoje no MorbiusFin 🚀" },
     { lbl: "☀️ Bom dia", txt: "Bom dia! ☀️ Começa o dia no controle: lança seus gastos no MorbiusFin 💚" },
+    { lbl: "🌤️ Boa tarde", txt: "Boa tarde! 🌤️ Já anotou os gastos de hoje? Leva 1 minutinho no MorbiusFin 📲" },
+    { lbl: "🌙 Boa noite", txt: "Boa noite! 🌙 Antes de dormir, fecha o dia no azul: registra os gastos no MorbiusFin 😴💚" },
     { lbl: "🧾 Fim de mês", txt: "Fim de mês chegando! 🧾 Confere como ficou seu saldo no MorbiusFin 📈" },
     { lbl: "🔥 Sequência", txt: "Não perde o ritmo! 🔥 Faz uns dias que você não registra nada. Bora manter a sequência? 💪" },
+    { lbl: "👀 Cadê você?", txt: "Ei, sumiu! 👀 Suas finanças sentem sua falta. Volta pro MorbiusFin e retoma o controle em 2 minutos 💚" },
+    { lbl: "💰 Fechou no azul?", txt: "Será que esse mês fechou no azul? 💰 Abre o MorbiusFin e descobre seu saldo agora 📊" },
+    { lbl: "😱 Gasto invisível", txt: "Cuidado com os gastos invisíveis! 😱 Aqueles pequenos que somam no fim do mês. Anota tudo no MorbiusFin 🕵️" },
+    { lbl: "🎁 Ganhe desconto", txt: "Sabia que dá pra pagar menos? 🎁 Convida um amigo pro MorbiusFin e ganhe desconto na sua mensalidade 🤝" },
+    { lbl: "🚀 Experimente o Pro", txt: "Já viu os gráficos e insights do Pro? 🚀 Descobre pra onde seu dinheiro tá indo no MorbiusFin ✨" },
     { lbl: "✨ Novidade", txt: "Tem novidade no MorbiusFin! ✨ Abre o app e dá uma olhada 👀" }
   ];
   // POPUP: dispara um RECADO pros usuários marcados. Modelo pronto OU texto livre. O admin SEMPRE chega
   // (independe do liga/desliga do usuário). O painel não vê dado nenhum da pessoa — só manda a mensagem.
-  function openNotify() {
+  function openNotify(alvoEmail) {
     if (document.getElementById("ntOv")) return;
-    var comEmail = _all.filter(function (l) { return (l.email || "").trim(); });
+    var umSo = !!alvoEmail;                                             // recado INDIVIDUAL (1 pessoa) vs geral
+    var comEmail = _all.filter(function (l) { return (l.email || "").trim() && (!umSo || l.email === alvoEmail); });
     var rows = comEmail.map(function (l) {
       var nome = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
       return '<label class="nt-row"><input type="checkbox" class="nt-ck" value="' + esc(l.email) + '" checked>'
@@ -1214,8 +1236,8 @@
       + '<button type="button" class="nt-chip nt-chip-blank" data-i="-1">✍️ Escrever a minha</button>';
     var ov = document.createElement("div"); ov.id = "ntOv"; ov.className = "fc-ov";
     ov.innerHTML = '<div class="fc-card nt-card"><button type="button" class="wn-x" id="ntX" aria-label="Fechar">✕</button>'
-      + '<div class="fc-h">🔔 Enviar recado</div>'
-      + '<div class="fc-sub">Escolha um modelo (dá pra editar) ou escreva o seu, e marque quem vai receber. Esse recado sempre chega — não depende do liga/desliga do usuário.</div>'
+      + '<div class="fc-h">🔔 ' + (umSo ? 'Notificar esta pessoa' : 'Enviar recado') + '</div>'
+      + '<div class="fc-sub">' + (umSo ? 'Recado individual — só esta pessoa recebe. Sempre chega, independe do liga/desliga.' : 'Escolha um modelo (dá pra editar) ou escreva o seu, e marque quem vai receber. Esse recado sempre chega — não depende do liga/desliga do usuário.') + '</div>'
       + '<label class="nt-lbl">Título</label>'
       + '<input id="ntTitulo" class="nt-titulo" maxlength="60" value="MorbiusFin 🐧">'
       + '<label class="nt-lbl">Modelos</label>'
@@ -1223,7 +1245,7 @@
       + '<label class="nt-lbl">Mensagem</label>'
       + '<textarea id="ntCorpo" class="nt-corpo" rows="3" maxlength="280" placeholder="Escreva o recado…">' + esc(NT_TEMPLATES[0].txt) + '</textarea>'
       + '<div class="nt-count"><span id="ntCount">0</span>/280</div>'
-      + (comEmail.length ? '<label class="nt-all"><input type="checkbox" id="ntAll" checked> Selecionar todos</label>' : '')
+      + ((comEmail.length && !umSo) ? '<label class="nt-all"><input type="checkbox" id="ntAll" checked> Selecionar todos</label>' : '')
       + '<div class="fc-list nt-list">' + (rows || '<div class="ad-empty">Nenhuma conta com email cadastrado.</div>') + '</div>'
       + '<div class="fc-acts"><button type="button" class="btn ghost" id="ntCancel">Cancelar</button><button type="button" class="btn primary" id="ntSend"' + (comEmail.length ? '' : ' disabled') + '>Enviar recado</button></div></div>';
     document.body.appendChild(ov);
