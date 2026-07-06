@@ -262,20 +262,112 @@
     return { txt: "faltam " + dias + " dias", cls: dias <= 3 ? "dias-poucos" : "dias-ok" };
   }
   // abas: Painel (dashboard) · Contas (lista) · Uso (dash + ranking) · Planos · Acessos · Descontos
+  // Barra ROLÁVEL na horizontal (nunca corta aba nenhuma) — fade nas bordas indica que dá pra rolar.
   function renderShell() {
-    view().innerHTML = '<div class="ad-tabs">'
+    view().innerHTML = '<div class="ad-tabbar" id="adTabbar"><div class="ad-tabs" id="adTabs">'
       + '<button type="button" class="ad-tab' + (_tab === "painel" ? " on" : "") + '" data-tab="painel">📊 Painel</button>'
       + '<button type="button" class="ad-tab' + (_tab === "contas" ? " on" : "") + '" data-tab="contas">📋 Contas</button>'
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
       + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
       + '<button type="button" class="ad-tab' + (_tab === "acessos" ? " on" : "") + '" data-tab="acessos">🔑 Acessos</button>'
       + '<button type="button" class="ad-tab' + (_tab === "descontos" ? " on" : "") + '" data-tab="descontos">🎁 Descontos</button>'
-      + '</div><div id="adContent"></div>';
+      + '</div></div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
+    bindTabScrollFade();
     if (_tab === "painel") renderDashboard(); else if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else if (_tab === "descontos") renderDescontos(); else renderTable("");
+  }
+  // liga o fade das bordas da barra de abas conforme a posição do scroll + garante a aba ativa visível
+  function bindTabScrollFade() {
+    var bar = document.getElementById("adTabbar"), track = document.getElementById("adTabs");
+    if (!bar || !track) return;
+    function update() {
+      var max = track.scrollWidth - track.clientWidth;
+      bar.classList.toggle("fade-l", track.scrollLeft > 8);
+      bar.classList.toggle("fade-r", max > 8 && track.scrollLeft < max - 8);
+    }
+    track.onscroll = update;
+    // ajusta scrollLeft manualmente (em vez de scrollIntoView) pra não sofrer com o padding do track —
+    // só mexe se a aba ativa estiver de fato fora da área visível.
+    var on = track.querySelector(".ad-tab.on");
+    if (on) {
+      var onL = on.offsetLeft, onR = onL + on.offsetWidth;
+      if (onL < track.scrollLeft) track.scrollLeft = Math.max(onL - 14, 0);
+      else if (onR > track.scrollLeft + track.clientWidth) track.scrollLeft = onR - track.clientWidth + 14;
+    }
+    update();
+    setTimeout(update, 60);   // recalcula após o layout assentar (fontes/ícones)
   }
   var _dashCharts = [];   // instâncias Chart.js vivas — destruídas a cada render (senão o Chart.js empilha canvas fantasma)
   function destroyDashCharts() { _dashCharts.forEach(function (ch) { try { ch.destroy(); } catch (e) {} }); _dashCharts = []; }
+  // lê a cor de tinta REAL do tema atual (--ink) — claro e escuro têm valores opostos; nunca fixar hex,
+  // senão o texto do gráfico fica ilegível quando o Kaick alterna claro/escuro.
+  function themeInk() {
+    try { var v = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim(); if (v) return v; } catch (e) {}
+    return "#11201a";
+  }
+  // Plugin de "valor em cima da barra" (sem lib extra) — só ativa com opts.on === true (guard explícito, NUNCA
+  // truthy de {} vazio) pra não vazar pra outros gráficos/tipos (ex.: os donuts não usam isso).
+  var barValuePlugin = {
+    id: "barValueLabel",
+    afterDatasetsDraw: function (chart, args, opts) {
+      if (opts.on !== true) return;
+      var ctx = chart.ctx, meta = chart.getDatasetMeta(0); if (!meta || !meta.data) return;
+      ctx.save();
+      ctx.font = "800 11px Manrope, sans-serif";
+      ctx.fillStyle = opts.color || themeInk();
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      meta.data.forEach(function (bar, i) {
+        var raw = chart.data.datasets[0].data[i];
+        var txt = opts.format ? opts.format(raw) : String(raw);
+        var pos = bar.tooltipPosition ? bar.tooltipPosition() : bar;
+        ctx.fillText(txt, pos.x, pos.y - 6);
+      });
+      ctx.restore();
+    }
+  };
+
+  // ===== Ajuda humana dos KPIs — "?" no canto do card abre um popover simples explicando o número =====
+  // Tom de gente, sem jargão. { emoji, titulo, texto } — o emoji some do título (fica só no cabeçalho do popover).
+  var HELP_TXT = {
+    "mrr": { emoji: "💸", titulo: "MRR estimada / mês", texto: "Quanto entra POR MÊS, mais ou menos: soma das assinaturas Plus e Pro ativas × o preço mensal de cada uma. É a sua renda recorrente estimada." },
+    "vitalicia": { emoji: "💎", titulo: "Receita vitalícia (total)", texto: "Tudo que você já vendeu em planos Ultimate (pagamento único, vitalício). NÃO é por mês — é o total acumulado desses pagamentos." },
+    "conversao": { emoji: "📈", titulo: "Conversão", texto: "De todas as contas, quantas são pagas. Ex.: 6 de 9 = 67%. Quanto maior, melhor." },
+    "ticket": { emoji: "🎟️", titulo: "Ticket médio (assinantes)", texto: "Em média, quanto cada ASSINANTE mensal paga por mês (MRR ÷ nº de assinantes Plus+Pro)." },
+    "total": { emoji: "👥", titulo: "Total de contas", texto: "Quantas contas existem no MorbiusFin no total — gratuitas e pagas, ativas e bloqueadas, somadas." },
+    "ativos": { emoji: "✅", titulo: "Ativas", texto: "Contas que você não bloqueou manualmente. Podem ser do plano Grátis ou de um plano pago — só não estão trancadas." },
+    "bloqueados": { emoji: "🚫", titulo: "Bloqueadas", texto: "Contas que você trancou na mão. A pessoa fica sem acesso até você ativar de novo — mesmo que o plano dela ainda esteja válido." },
+    "plano-ultimate": { emoji: "👑", titulo: "Plano Ultimate", texto: "Quantas pessoas compraram o Ultimate (pagamento único, vitalício) — o plano mais completo, sem mensalidade." },
+    "plano-pro": { emoji: "🚀", titulo: "Plano Pro", texto: "Quantas pessoas assinam o Pro por mês — o plano intermediário, com mais recursos que o Plus." },
+    "plano-plus": { emoji: "⭐", titulo: "Plano Plus", texto: "Quantas pessoas assinam o Plus por mês — a porta de entrada dos planos pagos." },
+    "plano-teste": { emoji: "🌱", titulo: "Grátis", texto: "Contas usando a versão gratuita — seja porque nunca pagaram, seja porque o plano pago venceu e caiu pro Grátis." },
+    "push": { emoji: "🔔", titulo: "Push ativo", texto: "Quantas contas podem receber teus avisos/lembretes no celular. Quem não tem push só recebe recado se abrir o app." },
+    "vencidos": { emoji: "⏰", titulo: "Vencidas (freemium)", texto: "Contas pagas cuja validade venceu e caíram pro Grátis — dá pra renovar clicando no card. É a sua fila de gente prestes a sumir." }
+  };
+  var _helpOv = null;
+  function closeHelpPopover() {
+    if (!_helpOv) return;
+    var ov = _helpOv; _helpOv = null;
+    ov.classList.remove("show");
+    setTimeout(function () { try { ov.remove(); } catch (e) {} }, 200);
+  }
+  // abre o popover de ajuda de um KPI pela chave em HELP_TXT — animação suave, fecha ao tocar fora/X.
+  function openHelpPopover(key) {
+    var t = HELP_TXT[key]; if (!t) return;
+    closeHelpPopover();
+    var ov = document.createElement("div"); ov.className = "hp-ov";
+    ov.innerHTML = '<div class="hp-card"><div class="hp-grip"></div><button type="button" class="hp-x" aria-label="Fechar">✕</button>'
+      + '<div class="hp-h"><span class="hp-emoji">' + t.emoji + '</span><span class="hp-titulo">' + esc(t.titulo) + '</span></div>'
+      + '<p class="hp-texto">' + esc(t.texto) + '</p></div>';
+    document.body.appendChild(ov);
+    _helpOv = ov;
+    requestAnimationFrame(function () { ov.classList.add("show"); });
+    ov.querySelector(".hp-x").onclick = closeHelpPopover;
+    ov.addEventListener("click", function (e) { if (e.target === ov) closeHelpPopover(); });
+  }
+  // botão "?" discreto — data-help-key no card pai; para(e) evita que o clique também dispare o onclick do KPI.
+  function helpBtnHtml(key) {
+    return HELP_TXT[key] ? '<button type="button" class="kpi-help" data-help="' + key + '" aria-label="O que é isso?" title="O que é isso?">?</button>' : '';
+  }
   // Aba PAINEL: dashboard com KPIs + gráficos (distribuição por plano, recursos liberados, heatmap recurso×plano).
   function renderDashboard() {
     var c = content(); if (!c) return;
@@ -362,16 +454,16 @@
       { emoji: "🔔", n: pushAtivos, lab: "Push ativo", cls: "", key: "push" },
       { emoji: "⏰", n: vencidos, lab: "Vencidas (freemium)", cls: vencidos ? "k-warn" : "", key: "vencidos" }
     ];
-    var kpiHtml = kpis.map(function (k) { return '<div class="kpi kpi-click ' + k.cls + '" data-kpi="' + k.key + '" role="button" tabindex="0"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+    var kpiHtml = kpis.map(function (k) { return '<div class="kpi kpi-click ' + k.cls + '" data-kpi="' + k.key + '" role="button" tabindex="0">' + helpBtnHtml(k.key) + '<div class="kpi-top"><span class="kpi-emoji">' + k.emoji + '</span><span class="kpi-lab">' + esc(k.lab) + '</span></div><div class="kpi-num">' + k.n + '</div></div>'; }).join("");
 
     // ===== HERO — KPIs de negócio (MRR, vitalícia, conversão, ticket médio) =====
     var heroKpis = [
-      { emoji: "💰", n: fmtBRL(mrr), lab: "MRR estimada / mês", cls: "" },
-      { emoji: "💎", n: fmtBRL(receitaVitalicia), lab: "Receita vitalícia (total)", cls: "" },
-      { emoji: "📊", n: conversaoPct + "%", lab: "Conversão (" + pagasNaoBloq + " de " + total + ")", cls: conversaoPct >= 15 ? "k-ok" : conversaoPct < 5 ? "k-warn" : "" },
-      { emoji: "🎟️", n: fmtBRL(ticketMedio), lab: "Ticket médio (assinantes)", cls: "" }
+      { emoji: "💰", n: fmtBRL(mrr), lab: "MRR estimada / mês", cls: "", help: "mrr" },
+      { emoji: "💎", n: fmtBRL(receitaVitalicia), lab: "Receita vitalícia (total)", cls: "", help: "vitalicia" },
+      { emoji: "📊", n: conversaoPct + "%", lab: "Conversão (" + pagasNaoBloq + " de " + total + ")", cls: conversaoPct >= 15 ? "k-ok" : conversaoPct < 5 ? "k-warn" : "", help: "conversao" },
+      { emoji: "🎟️", n: fmtBRL(ticketMedio), lab: "Ticket médio (assinantes)", cls: "", help: "ticket" }
     ];
-    var heroHtml = heroKpis.map(function (k) { return '<div class="kpi hero ' + k.cls + '"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+    var heroHtml = heroKpis.map(function (k) { return '<div class="kpi hero ' + k.cls + '">' + helpBtnHtml(k.help) + '<div class="kpi-top"><span class="kpi-emoji">' + k.emoji + '</span><span class="kpi-lab">' + esc(k.lab) + '</span></div><div class="kpi-num">' + k.n + '</div></div>'; }).join("");
 
     // ===== INSIGHTS do consultor =====
     var insights = dashConsultor({
@@ -424,18 +516,44 @@
     if (elFeats) {
       var chF = new Chart(elFeats.getContext("2d"), {
         type: "bar",
+        plugins: [barValuePlugin],
         data: { labels: labels, datasets: [{ label: "Recursos liberados", data: PLAN_LIST.map(function (p) { return featCount[p.k]; }), backgroundColor: colors, borderRadius: 8, maxBarThickness: 46 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " de " + FEATURE_LIST.length + " recursos"; } } } }, scales: { y: { beginAtZero: true, max: FEATURE_LIST.length, ticks: { stepSize: 2, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 11.5 } }, grid: { display: false } } } }
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding: { top: 20 } },
+          plugins: {
+            legend: { display: false },
+            barValueLabel: { on: true, format: function (v) { return v + "/" + FEATURE_LIST.length; } },
+            tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " de " + FEATURE_LIST.length + " recursos"; } } }
+          },
+          scales: { y: { beginAtZero: true, max: FEATURE_LIST.length, ticks: { stepSize: 2, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "800", size: 12 }, maxRotation: 0, minRotation: 0 }, grid: { display: false } } }
+        }
       });
       _dashCharts.push(chF);
     }
     // Receita estimada por plano: Plus/Pro em MRR mensal, Ultimate em total vitalício (naturezas diferentes, mesmo card p/ comparar magnitude).
+    // Rótulos CURTOS e retos (sem rotação) — a diferença MRR/vitalício vai no tooltip, não no eixo. Valor sempre
+    // visível em cima da barra (inclusive R$0) pra não parecer "gráfico quebrado" quando só um plano tem receita.
     var elReceita = document.getElementById("chReceita");
     if (elReceita) {
+      var receitaNatureza = ["MRR (por mês)", "MRR (por mês)", "vitalício (total)"];
       var chR = new Chart(elReceita.getContext("2d"), {
         type: "bar",
-        data: { labels: ["Plus (MRR)", "Pro (MRR)", "Ultimate (vitalício)"], datasets: [{ data: [mrrPlus, mrrPro, receitaVitalicia], backgroundColor: [PLAN_COLOR.plus, PLAN_COLOR.pro, PLAN_COLOR.ultimate], borderRadius: 8, maxBarThickness: 46 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + fmtBRL(ctx.parsed.y); } } } }, scales: { y: { beginAtZero: true, ticks: { color: "#8b9a92", font: { family: "Manrope", size: 11 }, callback: function (v) { return "R$" + v; } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 10.5 } }, grid: { display: false } } } }
+        plugins: [barValuePlugin],
+        data: { labels: ["Plus", "Pro", "Ultimate"], datasets: [{ data: [mrrPlus, mrrPro, receitaVitalicia], backgroundColor: [PLAN_COLOR.plus, PLAN_COLOR.pro, PLAN_COLOR.ultimate], borderRadius: 8, maxBarThickness: 46 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },   // espaço pro valor não cortar no topo do card
+          plugins: {
+            legend: { display: false },
+            barValueLabel: { on: true, format: function (v) { return fmtBRL(v); } },
+            tooltip: { callbacks: { label: function (ctx) { return " " + fmtBRL(ctx.parsed.y) + " · " + receitaNatureza[ctx.dataIndex]; } } }
+          },
+          scales: {
+            y: { beginAtZero: true, ticks: { color: "#8b9a92", font: { family: "Manrope", size: 11 }, callback: function (v) { return "R$" + v; } }, grid: { color: "rgba(139,154,146,.15)" } },
+            x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "800", size: 12 }, maxRotation: 0, minRotation: 0 }, grid: { display: false } }
+          }
+        }
       });
       _dashCharts.push(chR);
     }
@@ -455,8 +573,18 @@
     if (elCresc) {
       var chC = new Chart(elCresc.getContext("2d"), {
         type: "bar",
+        plugins: [barValuePlugin],
         data: { labels: growLbls, datasets: [{ label: "Novas contas", data: growVals, backgroundColor: "#15c266", borderRadius: 8, maxBarThickness: 46 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " nova(s) conta(s)"; } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 11.5 } }, grid: { display: false } } } }
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding: { top: 20 } },
+          plugins: {
+            legend: { display: false },
+            barValueLabel: { on: true },
+            tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " nova(s) conta(s)"; } } }
+          },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 11.5 }, maxRotation: 0, minRotation: 0 }, grid: { display: false } } }
+        }
       });
       _dashCharts.push(chC);
     }
@@ -464,6 +592,11 @@
     c.querySelectorAll("[data-kpi]").forEach(function (card) {
       card.onclick = function () { openKpiModal(card.dataset.kpi); };
       card.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKpiModal(card.dataset.kpi); } };
+    });
+    // botão "?" de ajuda em cada KPI — stopPropagation pra não abrir o modal de fila por trás (KPIs clicáveis).
+    c.querySelectorAll("[data-help]").forEach(function (btn) {
+      btn.onclick = function (e) { e.stopPropagation(); openHelpPopover(btn.dataset.help); };
+      btn.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openHelpPopover(btn.dataset.help); } };
     });
   }
   // Aba PAINEL · "Consultor de negócio": lê os números já calculados no renderDashboard e devolve insights

@@ -12,14 +12,14 @@
   <link rel="stylesheet" href="css/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    .ad-wrap { max-width: 920px; margin: 0 auto; padding: calc(20px + var(--safe-top)) 16px 40px; }
-    .ad-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-    .ad-brand { font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -.4px; }
+    .ad-wrap { max-width: 920px; margin: 0 auto; padding: calc(16px + var(--safe-top)) 14px 40px; }
+    .ad-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .ad-brand { font-size: 21px; font-weight: 800; color: var(--accent); letter-spacing: -.4px; }
     .ad-brand small { display: block; font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0; }
     .ad-who { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
     .ad-verpill { font-size: 11.5px; font-weight: 800; color: var(--accent); border: 1px solid var(--line); background: var(--card-2); border-radius: 999px; padding: 5px 12px; white-space: nowrap; }
     .ad-verpill[hidden] { display: none; }
-    .ad-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 18px; }
+    .ad-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; }
     .ad-login { max-width: 380px; margin: 8vh auto 0; }
     .ad-field { display: block; margin-bottom: 12px; }
     .ad-field span { display: block; font-size: 12.5px; color: var(--muted); font-weight: 700; margin-bottom: 5px; }
@@ -33,9 +33,10 @@
     .ad-msg { min-height: 18px; font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 8px 0; text-align: center; }
     .ad-msg.bad { color: var(--red); }
     .ad-msg.ok { color: var(--accent); }
-    .ad-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-    .ad-search { flex: 1; min-width: 180px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 15px; background: var(--card-2); color: var(--ink); font-family: var(--font); }
-    .ad-stat { font-size: 12.5px; color: var(--muted); }
+    .ad-toolbar { display: flex; gap: 8px 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .ad-search { flex: 1 1 100%; min-width: 0; padding: 11px 14px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; font-size: 15px; background: var(--card-2); color: var(--ink); font-family: var(--font); }
+    .ad-stat { font-size: 12.5px; color: var(--muted); flex: 1 1 auto; }
+    .ad-toolbar .btn.sm { min-height: 40px; }
     .ad-trial { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
     .ad-trial b { color: var(--ink); }
     .ad-trial input { width: 64px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 15px; font-weight: 800; text-align: center; }
@@ -90,11 +91,33 @@
     /* conta conjunta: convidada (herda Ultimate do dono) = rosa · dona (tem convidados) = roxo */
     .ad-conj { font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 999px; color: #ff9ec2; background: rgba(255,92,141,.16); cursor: help; }
     .ad-conj.own { color: #c4a7ff; background: rgba(124,58,237,.18); }
-    /* abas Contas / Uso */
-    .ad-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-    .ad-tab { flex: 1; background: var(--card-2); border: 1px solid var(--line); color: var(--muted); font-family: var(--font); font-weight: 800; font-size: 14px; padding: 11px; border-radius: 12px; cursor: pointer; }
-    .ad-tab.on { background: rgba(21,194,102,.16); border-color: rgba(21,194,102,.4); color: var(--accent, #15c266); }
-    .ad-tab:active { transform: scale(.98); }
+    /* abas Painel / Contas / Uso / Planos / Acessos / Descontos — barra ROLÁVEL na horizontal (nunca corta) */
+    .ad-tabbar { position: relative; margin: 0 -14px 16px; }
+    .ad-tabs {
+      display: flex; gap: 8px; margin: 0; padding: 2px 14px 8px;
+      overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity;
+      scroll-padding: 0 14px;   /* casa com o padding lateral — o snap "start" não ignora o respiro visual */
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .ad-tabs::-webkit-scrollbar { display: none; }
+    .ad-tab {
+      flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap;
+      background: var(--card-2); border: 1px solid var(--line); color: var(--muted);
+      font-family: var(--font); font-weight: 800; font-size: 13.5px;
+      padding: 11px 15px; min-height: 42px; border-radius: 12px; cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+    }
+    .ad-tab.on { background: rgba(21,194,102,.16); border-color: rgba(21,194,102,.45); color: var(--accent, #15c266); box-shadow: 0 0 0 1px rgba(21,194,102,.12) inset; }
+    .ad-tab:active { transform: scale(.96); }
+    /* fade nas bordas indicando que a barra rola — só aparece quando há conteúdo cortado (classes via JS) */
+    .ad-tabbar::before, .ad-tabbar::after {
+      content: ""; position: absolute; top: 0; bottom: 8px; width: 22px; pointer-events: none;
+      z-index: 2; opacity: 0; transition: opacity .2s ease;
+    }
+    .ad-tabbar::before { left: 0; background: linear-gradient(90deg, var(--card, #fff) 12%, transparent); }
+    .ad-tabbar::after { right: 0; background: linear-gradient(270deg, var(--card, #fff) 12%, transparent); }
+    .ad-tabbar.fade-l::before { opacity: 1; }
+    .ad-tabbar.fade-r::after { opacity: 1; }
     /* dash de uso */
     .uso-card { margin-bottom: 14px; }
     .uso-h { font-weight: 800; font-size: 15px; color: var(--ink); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -153,7 +176,8 @@
     .nt-corpo { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; }
     .nt-count { text-align: right; font-size: 11px; color: var(--muted); margin-top: 3px; }
     .ad-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-    .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
+    .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
+    .ad-controls .btn.sm { min-height: 40px; }
     .pill { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
     .pill.ativo { background: rgba(21,194,102,.16); color: var(--accent); }
     .pill.bloqueado { background: rgba(229,72,77,.16); color: var(--red); }
@@ -179,24 +203,29 @@
     @media (max-width: 560px) { .ad-row { grid-template-columns: 1fr; } .ad-controls { justify-content: flex-start; } }
 
     /* ===== Menu de opções (filtro/ordenação) — aba Contas ===== */
-    .ad-menubar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; }
-    .ad-menubar .ad-mgroup { display: flex; align-items: center; gap: 6px; }
-    .ad-menubar label { font-size: 11.5px; font-weight: 800; color: var(--muted); white-space: nowrap; }
-    .ad-menubar select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .ad-menubar { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; }
+    .ad-menubar .ad-mgroup { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .ad-menubar label { font-size: 11.5px; font-weight: 800; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
+    .ad-menubar select { padding: 8px 10px; min-height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 12.5px; font-weight: 700; cursor: pointer; min-width: 0; max-width: 100%; }
     .ad-menubar select:focus { outline: none; border-color: var(--accent); }
-    .ad-mspacer { flex: 1; }
-    .ad-mcount { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .ad-mspacer { flex: 1 1 100%; height: 0; order: 3; }
+    .ad-mcount { font-size: 12px; color: var(--muted); font-weight: 700; order: 4; margin-left: auto; }
+    @media (max-width: 400px) {
+      .ad-menubar { justify-content: space-between; }
+      .ad-menubar .ad-mgroup { flex: 1 1 auto; }
+      .ad-menubar select { width: 100%; }
+    }
 
     /* ===== Seções de plano (agrupamento) — aba Contas ===== */
     .ad-groups { display: flex; flex-direction: column; gap: 16px; }
     .ad-group { display: flex; flex-direction: column; gap: 10px; }
-    .ad-ghead { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px 4px; border-radius: 10px; user-select: none; -webkit-user-select: none; }
+    .ad-ghead { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 8px; min-height: 44px; border-radius: 10px; user-select: none; -webkit-user-select: none; flex-wrap: wrap; row-gap: 4px; }
     .ad-ghead:active { background: var(--card-2); }
     .ad-ghead-bar { width: 5px; align-self: stretch; border-radius: 4px; flex: 0 0 auto; min-height: 22px; }
     .ad-ghead-tier { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 15.5px; color: var(--ink); }
     .ad-ghead-tier img { width: 19px; height: 19px; object-fit: contain; }
     .ad-ghead-count { font-size: 12px; font-weight: 800; color: var(--muted); background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
-    .ad-ghead-sub { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+    .ad-ghead-sub { font-size: 11.5px; color: var(--muted); font-weight: 700; flex: 1 1 100%; padding-left: 15px; }
     .ad-ghead-sub .ok { color: var(--accent, #15c266); }
     .ad-ghead-sub .bad { color: var(--red); }
     .ad-ghead-chev { margin-left: auto; font-size: 12px; color: var(--muted); transition: transform .2s ease; flex: 0 0 auto; }
@@ -205,11 +234,16 @@
     .ad-group-empty { text-align: center; color: var(--muted); font-size: 12.5px; padding: 14px 10px; background: var(--card-2); border: 1px dashed var(--line); border-radius: 12px; }
 
     /* ===== Dashboard (aba Painel) ===== */
-    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-bottom: 18px; }
-    .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 12px; box-shadow: var(--shadow); }
-    .kpi-emoji { font-size: 16px; line-height: 1; margin-bottom: 6px; }
-    .kpi-num { font-size: 22px; font-weight: 800; letter-spacing: -.4px; line-height: 1; color: var(--ink); }
-    .kpi-lab { margin-top: 5px; font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+    /* mobile-first: 2 colunas fixas (nunca overflow em 380px); telas maiores ganham mais colunas */
+    /* KPI compacto: emoji+label numa linha só no topo, NÚMERO grande dominando embaixo — menos espaço morto */
+    .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+    @media (min-width: 480px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 720px) { .kpi-row { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); } }
+    .kpi { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow); min-width: 0; padding: 10px 11px 9px; }
+    .kpi-top { display: flex; align-items: center; gap: 5px; min-height: 16px; }
+    .kpi-emoji { font-size: 13px; line-height: 1; flex: 0 0 auto; }
+    .kpi-lab { font-size: 9.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .25px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+    .kpi-num { margin-top: 3px; font-size: 20px; font-weight: 800; letter-spacing: -.4px; line-height: 1.05; color: var(--ink); word-break: break-word; }
     .kpi.k-warn .kpi-num { color: var(--red); }
     .kpi.k-ok .kpi-num { color: var(--accent); }
     /* KPI clicável → abre a fila/lista da categoria */
@@ -217,10 +251,24 @@
     .kpi.kpi-click:hover { border-color: var(--accent); }
     .kpi.kpi-click:active { transform: scale(.97); }
     .kpi.kpi-click:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
-    /* hero de KPIs de negócio (MRR/vitalícia/conversão/ticket médio) */
-    .kpi-row.hero-row { margin-bottom: 12px; }
-    .kpi.hero { background: linear-gradient(160deg, var(--card), var(--card-2)); border-color: rgba(21,194,102,.28); }
-    .kpi.hero .kpi-num { font-size: 20px; }
+    /* hero de KPIs de negócio (MRR/vitalícia/conversão/ticket médio) — levemente maior que os normais (é o topo da hierarquia) */
+    .kpi-row.hero-row { margin-bottom: 10px; }
+    .kpi.hero { background: linear-gradient(160deg, var(--card), var(--card-2)); border-color: rgba(21,194,102,.28); padding: 12px 12px 11px; }
+    .kpi.hero .kpi-emoji { font-size: 14px; }
+    .kpi.hero .kpi-lab { font-size: 10px; white-space: normal; padding-right: 20px; }
+    .kpi.hero .kpi-num { font-size: 18px; margin-top: 4px; }
+    /* botão "?" de ajuda — discreto no canto do card, alvo de toque confortável mesmo pequeno visualmente */
+    .kpi-help {
+      position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: var(--card-2); color: var(--muted);
+      border-radius: 50%; font-size: 10.5px; font-weight: 800; font-family: var(--font);
+      cursor: pointer; line-height: 1; padding: 0; z-index: 3;
+      transition: background .15s ease, color .15s ease, transform .12s ease;
+    }
+    .kpi-help::before { content: ""; position: absolute; inset: -10px; } /* alvo de toque ~40px sem alterar o visual */
+    .kpi-help:hover, .kpi-help:focus-visible { background: rgba(21,194,102,.16); color: var(--accent); outline: none; }
+    .kpi-help:active { transform: scale(.9); }
     /* insights do consultor */
     .dash-insights { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
     .dash-insight { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; box-shadow: var(--shadow); border-left-width: 4px; border-left-style: solid; }
@@ -234,10 +282,11 @@
     .di-texto { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
     .dash-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
     @media (min-width: 720px) { .dash-grid { grid-template-columns: 1fr 1fr; } }
-    .dash-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; }
+    .dash-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; min-width: 0; }
     .dash-card.full { grid-column: 1 / -1; }
     .dash-h { font-weight: 800; font-size: 14.5px; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
-    .dash-chart-wrap { position: relative; height: 220px; }
+    .dash-h .kpi-help { position: static; margin-left: auto; }
+    .dash-chart-wrap { position: relative; height: 220px; max-width: 100%; }
     .dash-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; justify-content: center; }
     .dash-leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ink); }
     .dash-leg-dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
@@ -265,6 +314,29 @@
     .km-acts .btn { width: auto; flex: 0 0 auto; }
     .km-recusada-tag { font-size: 11px; font-weight: 800; color: var(--muted); }
     .km-empty { text-align: center; color: var(--muted); padding: 24px 10px; font-size: 13px; }
+
+    /* ===== Popover de ajuda do "?" — explicação humana do KPI, some ao tocar fora/X ===== */
+    .hp-ov { position: fixed; inset: 0; z-index: 210; background: rgba(0,0,0,.42); display: flex; align-items: flex-end; justify-content: center; padding: 0; opacity: 0; transition: opacity .18s ease; }
+    .hp-ov.show { opacity: 1; }
+    .hp-card {
+      position: relative; width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
+      border-radius: 20px 20px 0 0; box-shadow: var(--shadow-lg); padding: 18px 18px calc(18px + var(--safe-bottom));
+      transform: translateY(16px); opacity: 0; transition: transform .22s cubic-bezier(.2,.9,.3,1.2), opacity .2s ease;
+    }
+    .hp-ov.show .hp-card { transform: translateY(0); opacity: 1; }
+    .hp-grip { width: 36px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 14px; }
+    .hp-h { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+    .hp-emoji { font-size: 20px; line-height: 1.2; flex: 0 0 auto; }
+    .hp-titulo { font-weight: 800; font-size: 15px; color: var(--ink); line-height: 1.3; }
+    .hp-x { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border: 0; background: var(--card-2); color: var(--muted); border-radius: 9px; font-size: 14px; font-weight: 800; cursor: pointer; line-height: 1; }
+    .hp-x:active { transform: scale(.92); }
+    .hp-texto { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin: 0; }
+    /* variante desktop/tablet largo: vira popover ancorado perto do botão, não folha inteira */
+    @media (min-width: 640px) {
+      .hp-ov { align-items: center; background: rgba(0,0,0,.3); }
+      .hp-card { border-radius: 18px; transform: translateY(6px) scale(.97); }
+      .hp-ov.show .hp-card { transform: translateY(0) scale(1); }
+    }
   </style>
 </head>
 <body>
