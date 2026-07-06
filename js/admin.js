@@ -26,6 +26,18 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]); }); };
   var view = function () { return document.getElementById("adView"); };
   var who = function () { return document.getElementById("adWho"); };
+  // Pílula no header com a versão do APP DE PRODUÇÃO (financas) — fetch ao vivo, cache-bust; falha = some (não quebra nada).
+  function loadProdVersionPill() {
+    var el = document.getElementById("adVerPill"); if (!el) return;
+    fetch("https://morbiusfin.github.io/version.json?cb=" + Date.now())
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (j) {
+        var v = j && (j.version || j.v); if (!v) throw 0;
+        el.textContent = "MorbiusFin v" + String(v).replace(/^v/i, "");
+        el.hidden = false;
+      })
+      .catch(function () { el.hidden = true; });
+  }
   var _all = [], _email = "", _refreshT = null, _tab = "contas";
   var _pushStatus = {};   // email -> true/false (tem push ativo) · alimenta o sininho por linha
   var _refCounts = {};    // inviter_uid -> nº de pessoas indicadas (tabela referrals)
@@ -89,6 +101,19 @@
     return parseFloat(m[0].replace(/\./g, "").replace(",", ".")) || 0;
   }
   function fmtBRL(n) { return "R$ " + (n || 0).toFixed(2).replace(".", ","); }
+  // preço único do Ultimate (vitalício) — mesmo parser do baseMensal, mas lendo preco_unico; fallback 199.90
+  function precoUnicoUltimate() {
+    var ps = planoMerged(); var p = ps.filter(function (x) { return x.id === "ultimate"; })[0];
+    var m = p && String(p.preco_unico || "").match(/[\d.,]+/);
+    return m ? (parseFloat(m[0].replace(/\./g, "").replace(",", ".")) || 199.90) : 199.90;
+  }
+  // true = plano pago (não teste) + status ativo + validade não vencida (ou vitalício sem validade) → conta que RENDE hoje
+  function isAtivaNaoVencida(l) {
+    if (l.status === "bloqueado") return false;
+    if (!l.validade) return true;   // vitalício ou sem data = segue valendo
+    var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+    return isNaN(d.getTime()) || d.getTime() >= Date.now();
+  }
   function renderDescontos() {
     var c = content(); if (!c) return;
     var rd = _refDisc || {};
@@ -262,23 +287,104 @@
     var porPlano = {}; PLAN_LIST.forEach(function (p) { porPlano[p.k] = 0; });
     _all.forEach(function (l) { var t = l.plano || "teste"; porPlano[t] = (porPlano[t] || 0) + 1; });
     var vencidos = _all.filter(function (l) {
-      if (!l.validade || l.status === "bloqueado") return false;
+      // "vencidos" = caiu pro Grátis (freemium): só faz sentido pra quem TINHA plano pago (teste vencido já é Grátis, não "caiu" de lugar nenhum)
+      if ((l.plano || "teste") === "teste" || !l.validade || l.status === "bloqueado") return false;
       var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
       return !isNaN(d.getTime()) && d.getTime() < Date.now();
     }).length;
     var pushAtivos = Object.keys(_pushStatus).filter(function (k) { return _pushStatus[k] === true; }).length;
+
+    // ===== NEGÓCIO: MRR, receita vitalícia, conversão, ticket médio =====
+    var precoPlus = baseMensal("plus"), precoPro = baseMensal("pro"), precoUlt = precoUnicoUltimate();
+    var plusAtivas = _all.filter(function (l) { return (l.plano || "teste") === "plus" && isAtivaNaoVencida(l); }).length;
+    var proAtivas = _all.filter(function (l) { return (l.plano || "teste") === "pro" && isAtivaNaoVencida(l); }).length;
+    var ultAtivas = _all.filter(function (l) { return (l.plano || "teste") === "ultimate" && isAtivaNaoVencida(l); }).length;
+    var mrrPlus = plusAtivas * precoPlus, mrrPro = proAtivas * precoPro;
+    var mrr = mrrPlus + mrrPro;
+    var receitaVitalicia = ultAtivas * precoUlt;
+    var pagasNaoBloq = _all.filter(function (l) { var t = l.plano || "teste"; return t !== "teste" && l.status !== "bloqueado"; }).length;
+    var conversaoPct = total ? Math.round(pagasNaoBloq / total * 100) : 0;
+    var assinantesRecorrentes = plusAtivas + proAtivas;
+    var ticketMedio = assinantesRecorrentes ? (mrr / assinantesRecorrentes) : 0;
+
+    // ===== RISCO DE VENCIMENTO (churn) — só contas PAGAS (plano != teste) =====
+    var pagas = _all.filter(function (l) { return (l.plano || "teste") !== "teste"; });
+    var riscoBuckets = { vitalicio: 0, tranquilo: 0, d30: 0, d7: 0, vencido: 0 };
+    var contasVencemEm7 = [], valorEmRisco7 = 0, semPushEm7 = 0;
+    pagas.forEach(function (l) {
+      if (l.status === "bloqueado") return;   // bloqueada manualmente não entra no funil de risco
+      if (!l.validade) { riscoBuckets.vitalicio++; return; }
+      var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+      if (isNaN(d.getTime())) { riscoBuckets.vitalicio++; return; }
+      var dias = Math.ceil((d.getTime() - Date.now()) / 86400000);
+      if (dias < 0) { riscoBuckets.vencido++; return; }
+      if (dias <= 7) {
+        riscoBuckets.d7++;
+        contasVencemEm7.push(l);
+        var precoL = l.plano === "pro" ? precoPro : l.plano === "ultimate" ? precoUlt : precoPlus;
+        valorEmRisco7 += precoL;
+        if (_pushStatus[(l.email || "").trim().toLowerCase()] !== true) semPushEm7++;
+      } else if (dias <= 30) { riscoBuckets.d30++; }
+      else { riscoBuckets.tranquilo++; }
+    });
+
+    // ===== CRESCIMENTO — novas contas por mês (últimos 6 meses) =====
+    var mesesLbl = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    var growKeys = [], growMap = {};
+    for (var gi = 5; gi >= 0; gi--) {
+      var gd = new Date(); gd.setDate(1); gd.setMonth(gd.getMonth() - gi);
+      var gk = gd.getFullYear() + "-" + String(gd.getMonth() + 1).padStart(2, "0");
+      growKeys.push(gk); growMap[gk] = 0;
+    }
+    _all.forEach(function (l) {
+      if (!l.criado_em) return;
+      var cd = new Date(l.criado_em); if (isNaN(cd.getTime())) return;
+      var ck = cd.getFullYear() + "-" + String(cd.getMonth() + 1).padStart(2, "0");
+      if (ck in growMap) growMap[ck]++;
+    });
+
+    // contas no Grátis (teste) cujo trial vence em ≤7 dias (ainda não vencido) — funil pra converter agora
+    var trialVencendoEm7 = _all.filter(function (l) {
+      if ((l.plano || "teste") !== "teste" || l.status === "bloqueado" || !l.validade) return false;
+      var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+      if (isNaN(d.getTime())) return false;
+      var dias = Math.ceil((d.getTime() - Date.now()) / 86400000);
+      return dias >= 0 && dias <= 7;
+    }).length;
+
     var kpis = [
-      { emoji: "👥", n: total, lab: "Total de contas", cls: "" },
-      { emoji: "✅", n: ativos, lab: "Ativas", cls: "k-ok" },
-      { emoji: "🚫", n: bloqueados, lab: "Bloqueadas", cls: bloqueados ? "k-warn" : "" },
-      { emoji: "👑", n: porPlano.ultimate || 0, lab: "Ultimate", cls: "" },
-      { emoji: "🚀", n: porPlano.pro || 0, lab: "Pro", cls: "" },
-      { emoji: "⭐", n: porPlano.plus || 0, lab: "Plus", cls: "" },
-      { emoji: "🌱", n: porPlano.teste || 0, lab: "Grátis", cls: "" },
-      { emoji: "🔔", n: pushAtivos, lab: "Push ativo", cls: "" },
-      { emoji: "⏰", n: vencidos, lab: "Vencidas (freemium)", cls: vencidos ? "k-warn" : "" }
+      { emoji: "👥", n: total, lab: "Total de contas", cls: "", key: "total" },
+      { emoji: "✅", n: ativos, lab: "Ativas", cls: "k-ok", key: "ativos" },
+      { emoji: "🚫", n: bloqueados, lab: "Bloqueadas", cls: bloqueados ? "k-warn" : "", key: "bloqueados" },
+      { emoji: "👑", n: porPlano.ultimate || 0, lab: "Ultimate", cls: "", key: "plano-ultimate" },
+      { emoji: "🚀", n: porPlano.pro || 0, lab: "Pro", cls: "", key: "plano-pro" },
+      { emoji: "⭐", n: porPlano.plus || 0, lab: "Plus", cls: "", key: "plano-plus" },
+      { emoji: "🌱", n: porPlano.teste || 0, lab: "Grátis", cls: "", key: "plano-teste" },
+      { emoji: "🔔", n: pushAtivos, lab: "Push ativo", cls: "", key: "push" },
+      { emoji: "⏰", n: vencidos, lab: "Vencidas (freemium)", cls: vencidos ? "k-warn" : "", key: "vencidos" }
     ];
-    var kpiHtml = kpis.map(function (k) { return '<div class="kpi ' + k.cls + '"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+    var kpiHtml = kpis.map(function (k) { return '<div class="kpi kpi-click ' + k.cls + '" data-kpi="' + k.key + '" role="button" tabindex="0"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+
+    // ===== HERO — KPIs de negócio (MRR, vitalícia, conversão, ticket médio) =====
+    var heroKpis = [
+      { emoji: "💰", n: fmtBRL(mrr), lab: "MRR estimada / mês", cls: "" },
+      { emoji: "💎", n: fmtBRL(receitaVitalicia), lab: "Receita vitalícia (total)", cls: "" },
+      { emoji: "📊", n: conversaoPct + "%", lab: "Conversão (" + pagasNaoBloq + " de " + total + ")", cls: conversaoPct >= 15 ? "k-ok" : conversaoPct < 5 ? "k-warn" : "" },
+      { emoji: "🎟️", n: fmtBRL(ticketMedio), lab: "Ticket médio (assinantes)", cls: "" }
+    ];
+    var heroHtml = heroKpis.map(function (k) { return '<div class="kpi hero ' + k.cls + '"><div class="kpi-emoji">' + k.emoji + '</div><div class="kpi-num">' + k.n + '</div><div class="kpi-lab">' + esc(k.lab) + '</div></div>'; }).join("");
+
+    // ===== INSIGHTS do consultor =====
+    var insights = dashConsultor({
+      total: total, pagasNaoBloq: pagasNaoBloq, conversaoPct: conversaoPct,
+      mrr: mrr, mrrPlus: mrrPlus, mrrPro: mrrPro, receitaVitalicia: receitaVitalicia,
+      pushAtivos: pushAtivos, contasVencemEm7: contasVencemEm7, valorEmRisco7: valorEmRisco7, semPushEm7: semPushEm7,
+      porPlano: porPlano, vencidos: vencidos, trialVencendoEm7: trialVencendoEm7
+    });
+    var insightsHtml = insights.map(function (i) {
+      return '<div class="dash-insight tone-' + i.tone + '"><div class="di-icon">' + i.icon + '</div><div class="di-body"><div class="di-titulo">' + esc(i.titulo) + '</div><div class="di-texto">' + i.texto + '</div></div></div>';
+    }).join("");
+
     var feat = planFeatMerged();
     var featCount = {}; PLAN_LIST.forEach(function (p) { featCount[p.k] = FEATURE_LIST.reduce(function (n, f) { return n + (feat[p.k][f.k] ? 1 : 0); }, 0); });
     var heatRows = FEATURE_LIST.map(function (f) {
@@ -287,10 +393,20 @@
       }).join("") + '</tr>';
     }).join("");
     var heatHead = '<tr><th>Recurso</th>' + PLAN_LIST.map(function (p) { return '<th>' + esc(p.lbl) + '</th>'; }).join("") + '</tr>';
-    c.innerHTML = '<div class="kpi-row">' + kpiHtml + '</div>'
+    var riscoLbls = ["Vitalício", "Tranquilo (>30d)", "Vence ≤30d", "Vence ≤7d", "Vencido→Grátis"];
+    var riscoVals = [riscoBuckets.vitalicio, riscoBuckets.tranquilo, riscoBuckets.d30, riscoBuckets.d7, riscoBuckets.vencido];
+    var riscoCores = ["#b59bf7", "#15c266", "#f5a623", "#ff9142", "#8b9a92"];
+    var growLbls = growKeys.map(function (k) { var parts = k.split("-"); return mesesLbl[parseInt(parts[1], 10) - 1] + "/" + parts[0].slice(2); });
+    var growVals = growKeys.map(function (k) { return growMap[k]; });
+    c.innerHTML = '<div class="kpi-row hero-row">' + heroHtml + '</div>'
+      + (insightsHtml ? '<div class="dash-insights">' + insightsHtml + '</div>' : '')
+      + '<div class="kpi-row">' + kpiHtml + '</div>'
       + '<div class="dash-grid">'
       + '<div class="dash-card"><div class="dash-h">🥧 Contas por plano</div><div class="dash-chart-wrap"><canvas id="chPlanos"></canvas></div></div>'
       + '<div class="dash-card"><div class="dash-h">🔑 Recursos liberados por plano</div><div class="dash-chart-wrap"><canvas id="chFeats"></canvas></div></div>'
+      + '<div class="dash-card"><div class="dash-h">💵 Receita estimada por plano</div><div class="dash-chart-wrap"><canvas id="chReceita"></canvas></div></div>'
+      + '<div class="dash-card"><div class="dash-h">⏳ Risco de vencimento</div><div class="dash-chart-wrap"><canvas id="chRisco"></canvas></div></div>'
+      + '<div class="dash-card full"><div class="dash-h">📈 Novas contas por mês</div><div class="dash-chart-wrap"><canvas id="chCresc"></canvas></div></div>'
       + '<div class="dash-card full"><div class="dash-h">🗺️ Mapa de recursos × plano</div><div class="heat-wrap"><table class="heat-tbl">' + heatHead + heatRows + '</table></div></div>'
       + '</div>';
     if (!(window.Chart)) { adToast("Gráficos indisponíveis (Chart.js não carregou)"); return; }
@@ -314,6 +430,194 @@
       });
       _dashCharts.push(chF);
     }
+    // Receita estimada por plano: Plus/Pro em MRR mensal, Ultimate em total vitalício (naturezas diferentes, mesmo card p/ comparar magnitude).
+    var elReceita = document.getElementById("chReceita");
+    if (elReceita) {
+      var chR = new Chart(elReceita.getContext("2d"), {
+        type: "bar",
+        data: { labels: ["Plus (MRR)", "Pro (MRR)", "Ultimate (vitalício)"], datasets: [{ data: [mrrPlus, mrrPro, receitaVitalicia], backgroundColor: [PLAN_COLOR.plus, PLAN_COLOR.pro, PLAN_COLOR.ultimate], borderRadius: 8, maxBarThickness: 46 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + fmtBRL(ctx.parsed.y); } } } }, scales: { y: { beginAtZero: true, ticks: { color: "#8b9a92", font: { family: "Manrope", size: 11 }, callback: function (v) { return "R$" + v; } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 10.5 } }, grid: { display: false } } } }
+      });
+      _dashCharts.push(chR);
+    }
+    // Risco de vencimento (churn): buckets do funil de renovação — verde (tranquilo) → vermelho (vencido).
+    var elRisco = document.getElementById("chRisco");
+    if (elRisco) {
+      var totalRisco = riscoVals.reduce(function (a, b) { return a + b; }, 0);
+      var chRi = new Chart(elRisco.getContext("2d"), {
+        type: "doughnut",
+        data: { labels: riscoLbls, datasets: [{ data: riscoVals, backgroundColor: riscoCores, borderWidth: 0, hoverOffset: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { boxWidth: 11, padding: 10, font: { family: "Manrope", weight: "700", size: 10.5 }, color: "#8b9a92" } }, tooltip: { callbacks: { label: function (ctx) { var v = ctx.parsed || 0; var pct = totalRisco ? Math.round(v / totalRisco * 100) : 0; return " " + ctx.label + ": " + v + " (" + pct + "%)"; } } } } }
+      });
+      _dashCharts.push(chRi);
+    }
+    // Crescimento — novas contas por mês (últimos 6 meses), a partir de criado_em.
+    var elCresc = document.getElementById("chCresc");
+    if (elCresc) {
+      var chC = new Chart(elCresc.getContext("2d"), {
+        type: "bar",
+        data: { labels: growLbls, datasets: [{ label: "Novas contas", data: growVals, backgroundColor: "#15c266", borderRadius: 8, maxBarThickness: 46 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (ctx) { return " " + ctx.parsed.y + " nova(s) conta(s)"; } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: "#8b9a92", font: { family: "Manrope", size: 11 } }, grid: { color: "rgba(139,154,146,.15)" } }, x: { ticks: { color: "#8b9a92", font: { family: "Manrope", weight: "700", size: 11.5 } }, grid: { display: false } } } }
+      });
+      _dashCharts.push(chC);
+    }
+    // KPI cards clicáveis → abrem a fila/lista da categoria (fecha o loop das seções acima).
+    c.querySelectorAll("[data-kpi]").forEach(function (card) {
+      card.onclick = function () { openKpiModal(card.dataset.kpi); };
+      card.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKpiModal(card.dataset.kpi); } };
+    });
+  }
+  // Aba PAINEL · "Consultor de negócio": lê os números já calculados no renderDashboard e devolve insights
+  // priorizados (bad→warn→info→ok), cada um com número real + ação concreta. Só entra o que faz sentido mostrar.
+  function dashConsultor(d) {
+    var out = [];
+    // 1) Churn/vencimento — contas pagas vencendo em ≤7 dias
+    if (d.contasVencemEm7.length) {
+      var n7 = d.contasVencemEm7.length;
+      var tone7 = d.valorEmRisco7 >= 50 ? "bad" : "warn";
+      var semPushTxt = d.semPushEm7 ? (" " + d.semPushEm7 + " dessas sem push ativo → não recebem lembrete automático.") : "";
+      out.push({ icon: "⚠️", tone: tone7, titulo: n7 + " conta" + (n7 === 1 ? "" : "s") + " paga" + (n7 === 1 ? "" : "s") + " vence" + (n7 === 1 ? "" : "m") + " em 7 dias",
+        texto: fmtBRL(d.valorEmRisco7) + " em risco de churn." + semPushTxt + " Ação: use 🔔 Notificar pra avisar antes que caiam pro Grátis." });
+    }
+    // 2) Conversão
+    var convTxt = d.conversaoPct < 5 ? "baixo — foque em ativar o trial" : d.conversaoPct <= 15 ? "na média" : "ótima conversão";
+    var convTone = d.conversaoPct < 5 ? "warn" : d.conversaoPct <= 15 ? "info" : "ok";
+    out.push({ icon: "📊", tone: convTone, titulo: d.conversaoPct + "% das contas são pagas",
+      texto: d.pagasNaoBloq + " de " + d.total + " contas · " + convTxt + "." });
+    // 3) Receita
+    var maiorFonte = d.mrrPlus >= d.mrrPro ? "Plus" : "Pro";
+    var maiorPct = d.mrr ? Math.round((d.mrrPlus >= d.mrrPro ? d.mrrPlus : d.mrrPro) / d.mrr * 100) : 0;
+    out.push({ icon: "💰", tone: "ok", titulo: "MRR de " + fmtBRL(d.mrr) + "/mês + " + fmtBRL(d.receitaVitalicia) + " vitalícios",
+      texto: d.mrr ? ("Maior fonte recorrente: " + maiorFonte + " (" + maiorPct + "% da MRR).") : "Ainda sem assinatura recorrente ativa — a receita de hoje é só vitalícia." });
+    // 4) Engajamento push
+    var covPush = d.total ? Math.round(d.pushAtivos / d.total * 100) : 0;
+    if (d.total && covPush < 70) {
+      out.push({ icon: "🔔", tone: "warn", titulo: "Só " + covPush + "% têm push ativo",
+        texto: d.pushAtivos + " de " + d.total + " contas · " + (d.total - d.pushAtivos) + " não recebem teus avisos nem lembrete de vencimento." });
+    }
+    // 5) Indicações
+    var refEntries = Object.keys(_refCounts).filter(function (k) { return _refCounts[k] > 0; });
+    if (refEntries.length) {
+      var totalRef = refEntries.reduce(function (s, k) { return s + _refCounts[k]; }, 0);
+      var topUid = refEntries.reduce(function (best, k) { return (!best || _refCounts[k] > _refCounts[best]) ? k : best; }, null);
+      var topL = topUid ? byUid(topUid) : null;
+      var topNome = topL ? (topL.nome || topL.email || "—") : "—";
+      out.push({ icon: "🎁", tone: "ok", titulo: totalRef + " conta" + (totalRef === 1 ? "" : "s") + " " + (totalRef === 1 ? "veio" : "vieram") + " por indicação",
+        texto: "Top indicador: " + esc(topNome) + ". O joguinho tá rodando." });
+    } else {
+      out.push({ icon: "🎁", tone: "info", titulo: "Ninguém indicou ainda",
+        texto: "O desconto por indicação não decolou — vale incentivar (link de indicação já existe em cada conta)." });
+    }
+    // 6) Grátis / funil
+    var nGratis = d.porPlano.teste || 0;
+    if (nGratis) {
+      var verboSer = nGratis === 1 ? "é" : "são";
+      out.push({ icon: "🌱", tone: "info", titulo: nGratis + " conta" + (nGratis === 1 ? "" : "s") + " no Grátis " + verboSer + " teu funil",
+        texto: d.trialVencendoEm7 ? (d.trialVencendoEm7 + " vence" + (d.trialVencendoEm7 === 1 ? "" : "m") + " o trial em ≤7 dias — hora de converter.") : "Acompanhe o trial pra converter em pago antes de virar Grátis." });
+    }
+    // ordena por urgência: bad → warn → info → ok
+    var ordem = { bad: 0, warn: 1, info: 2, ok: 3 };
+    out.sort(function (a, b) { return ordem[a.tone] - ordem[b.tone]; });
+    // fallback: se nada crítico (sem bad/warn), garante 1 cartão de "base saudável" no topo
+    if (!out.some(function (i) { return i.tone === "bad" || i.tone === "warn"; })) {
+      out.unshift({ icon: "✅", tone: "ok", titulo: "Base saudável",
+        texto: d.conversaoPct + "% pagas, churn baixo, MRR " + fmtBRL(d.mrr) + "/mês." });
+    }
+    return out;
+  }
+  // parseia validade (YYYY-MM-DD ou ISO) pro mesmo horário de Brasília usado no resto do painel; null se sem data/ inválida
+  function parseValidade(v) {
+    if (!v) return null;
+    var s = String(v); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  var PLANO_LBL_ALL = { teste: "Grátis", plus: "Plus", pro: "Pro", ultimate: "Ultimate" };
+  // recusas da sessão (memória, não persiste): uid -> true. Só efeito visual — a conta CONTINUA na fila real.
+  var _kmRecusadas = {};
+  // Modal de KPI: lista as contas da categoria clicada. "vencidos" ganha ações de Liberar/Recusar (fila de decisão);
+  // as demais são somente leitura (nome/email/plano/status).
+  function openKpiModal(key) {
+    var defs = {
+      total: { titulo: "👥 Total de contas", filtro: function () { return _all.slice(); } },
+      ativos: { titulo: "✅ Contas ativas", filtro: function () { return _all.filter(function (l) { return l.status !== "bloqueado"; }); } },
+      bloqueados: { titulo: "🚫 Contas bloqueadas", filtro: function () { return _all.filter(function (l) { return l.status === "bloqueado"; }); } },
+      "plano-ultimate": { titulo: "👑 Plano Ultimate", filtro: function () { return _all.filter(function (l) { return (l.plano || "teste") === "ultimate"; }); } },
+      "plano-pro": { titulo: "🚀 Plano Pro", filtro: function () { return _all.filter(function (l) { return (l.plano || "teste") === "pro"; }); } },
+      "plano-plus": { titulo: "⭐ Plano Plus", filtro: function () { return _all.filter(function (l) { return (l.plano || "teste") === "plus"; }); } },
+      "plano-teste": { titulo: "🌱 Plano Grátis", filtro: function () { return _all.filter(function (l) { return (l.plano || "teste") === "teste"; }); } },
+      push: { titulo: "🔔 Push ativo", filtro: function () { return _all.filter(function (l) { return _pushStatus[(l.email || "").trim().toLowerCase()] === true; }); } },
+      vencidos: {
+        titulo: "⏰ Vencidas (freemium) — fila de decisão", acao: true,
+        filtro: function () {
+          return _all.filter(function (l) {
+            var t = l.plano || "teste"; if (t === "teste" || l.status === "bloqueado") return false;
+            var d = parseValidade(l.validade); return d && d.getTime() < Date.now();
+          });
+        }
+      }
+    };
+    var def = defs[key]; if (!def) return;
+    var old = document.getElementById("kmOv"); if (old) old.remove();
+    var ov = document.createElement("div"); ov.id = "kmOv"; ov.className = "fc-ov";
+    document.body.appendChild(ov);
+    function paint() {
+      var lista = def.filtro();
+      var sub = def.acao
+        ? "Plano pago vencido → a pessoa já está no Grátis. <b>Liberar</b> renova a validade e volta o plano pago na hora. <b>Recusar/Manter</b> não mexe em nada — a conta continua aqui na fila."
+        : lista.length + " conta(s) nesta categoria.";
+      var rows = lista.map(function (l) {
+        var nome = (l.nome && String(l.nome).trim()) ? esc(l.nome) : esc(l.email || "(sem nome)");
+        var tierLbl = PLANO_LBL_ALL[l.plano || "teste"] || (l.plano || "teste");
+        var statusLbl = l.status === "bloqueado" ? "bloqueado" : "ativo";
+        var recusada = !!_kmRecusadas[l.user_id];
+        var head = '<div class="km-top"><div><div class="km-nome">' + nome + '</div><div class="km-email">' + esc(l.email || "") + '</div></div>';
+        if (def.acao) {
+          var d = parseValidade(l.validade);
+          var diasVenc = d ? Math.floor((Date.now() - d.getTime()) / 86400000) : 0;
+          head += '<span class="km-venc">' + tierLbl + ' · venceu há ' + Math.max(diasVenc, 0) + 'd</span></div>';
+          var acts = recusada
+            ? '<div class="km-acts"><span class="km-recusada-tag">🚫 mantida recusada — segue na fila</span></div>'
+            : '<div class="km-acts">'
+              + '<button type="button" class="btn primary sm" data-act="liberar30" data-uid="' + esc(l.user_id) + '">Liberar +30d</button>'
+              + '<button type="button" class="btn primary sm" data-act="liberar1a" data-uid="' + esc(l.user_id) + '">Liberar +1 ano</button>'
+              + '<button type="button" class="btn ghost sm" data-act="recusar" data-uid="' + esc(l.user_id) + '">Recusar / Manter</button>'
+              + '</div>';
+          return '<div class="km-row' + (recusada ? ' km-recusada' : '') + '" data-uid="' + esc(l.user_id) + '">' + head + acts + '</div>';
+        }
+        head += '<span class="pill ' + (statusLbl === "bloqueado" ? "bloqueado" : "ativo") + '">' + statusLbl + '</span></div>';
+        return '<div class="km-row" data-uid="' + esc(l.user_id) + '">' + head + '<div class="km-sub" style="margin:0">Plano: <b>' + esc(tierLbl) + '</b></div></div>';
+      }).join("");
+      ov.innerHTML = '<div class="fc-card km-card"><button type="button" class="wn-x" id="kmX" aria-label="Fechar">✕</button>'
+        + '<div class="fc-h">' + def.titulo + '</div>'
+        + '<div class="km-sub">' + sub + '</div>'
+        + '<div class="km-list">' + (rows || '<div class="km-empty">Nenhuma conta nesta categoria.</div>') + '</div></div>';
+      ov.querySelector("#kmX").onclick = function () { ov.remove(); };
+      if (def.acao) {
+        ov.querySelectorAll('[data-act="liberar30"]').forEach(function (b) { b.onclick = function () { kmLiberar(b.dataset.uid, 30, paint); }; });
+        ov.querySelectorAll('[data-act="liberar1a"]').forEach(function (b) { b.onclick = function () { kmLiberar(b.dataset.uid, 365, paint); }; });
+        ov.querySelectorAll('[data-act="recusar"]').forEach(function (b) { b.onclick = function () { _kmRecusadas[b.dataset.uid] = true; paint(); adToast("Mantida na fila — nada foi alterado"); }; });
+      }
+    }
+    ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+    paint();
+  }
+  // Libera uma conta da fila de vencidas: soma "dias" à validade (mesma regra do shiftValidade — parte do
+  // maior entre hoje e a validade atual) e, se estava bloqueada manualmente, volta pra ativa.
+  async function kmLiberar(uid, dias, onDone) {
+    var l = byUid(uid); if (!l) return;
+    var base = new Date();
+    if (l.validade) { var v = parseValidade(l.validade); if (v && v > base) base = v; }
+    base.setDate(base.getDate() + dias);
+    var novaVal = base.toISOString().slice(0, 10);
+    var patch = { validade: novaVal }; if (l.status === "bloqueado") patch.status = "ativo";
+    var r = await client().from("licencas").update(patch).eq("user_id", uid).select();
+    if (r.error) { adToast("Falha ao liberar: " + r.error.message); return; }
+    if (!r.data || !r.data.length) { adToast("Nada gravado (linha não encontrada)."); return; }
+    Object.assign(l, patch);
+    delete _kmRecusadas[uid];
+    adToast("✅ Liberada +" + dias + "d — saiu da fila");
+    if (onDone) onDone();
+    if (_tab === "painel") renderDashboard();   // atualiza os KPIs/gráficos por trás do modal
   }
   function adToast(msg) {
     var t = document.getElementById("adToast");
@@ -876,5 +1180,6 @@
       done(); renderShell(); adToast(n + " cadastro(s) atualizado(s)");
     };
   }
+  loadProdVersionPill();
   boot();
 })();

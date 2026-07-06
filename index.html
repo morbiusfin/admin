@@ -17,6 +17,8 @@
     .ad-brand { font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -.4px; }
     .ad-brand small { display: block; font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0; }
     .ad-who { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+    .ad-verpill { font-size: 11.5px; font-weight: 800; color: var(--accent); border: 1px solid var(--line); background: var(--card-2); border-radius: 999px; padding: 5px 12px; white-space: nowrap; }
+    .ad-verpill[hidden] { display: none; }
     .ad-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 18px; }
     .ad-login { max-width: 380px; margin: 8vh auto 0; }
     .ad-field { display: block; margin-bottom: 12px; }
@@ -210,6 +212,26 @@
     .kpi-lab { margin-top: 5px; font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
     .kpi.k-warn .kpi-num { color: var(--red); }
     .kpi.k-ok .kpi-num { color: var(--accent); }
+    /* KPI clicável → abre a fila/lista da categoria */
+    .kpi.kpi-click { cursor: pointer; transition: transform .12s ease, border-color .12s ease; }
+    .kpi.kpi-click:hover { border-color: var(--accent); }
+    .kpi.kpi-click:active { transform: scale(.97); }
+    .kpi.kpi-click:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+    /* hero de KPIs de negócio (MRR/vitalícia/conversão/ticket médio) */
+    .kpi-row.hero-row { margin-bottom: 12px; }
+    .kpi.hero { background: linear-gradient(160deg, var(--card), var(--card-2)); border-color: rgba(21,194,102,.28); }
+    .kpi.hero .kpi-num { font-size: 20px; }
+    /* insights do consultor */
+    .dash-insights { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+    .dash-insight { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; box-shadow: var(--shadow); border-left-width: 4px; border-left-style: solid; }
+    .dash-insight.tone-bad { border-left-color: var(--red); }
+    .dash-insight.tone-warn { border-left-color: var(--amber); }
+    .dash-insight.tone-info { border-left-color: var(--blue); }
+    .dash-insight.tone-ok { border-left-color: var(--accent); }
+    .di-icon { font-size: 20px; line-height: 1; flex: 0 0 auto; }
+    .di-body { min-width: 0; }
+    .di-titulo { font-weight: 800; font-size: 13.5px; color: var(--ink); margin-bottom: 3px; }
+    .di-texto { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
     .dash-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
     @media (min-width: 720px) { .dash-grid { grid-template-columns: 1fr 1fr; } }
     .dash-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; }
@@ -228,12 +250,28 @@
     .heat-dot { display: inline-block; width: 16px; height: 16px; border-radius: 5px; }
     .heat-dot.on { background: var(--accent, #15c266); }
     .heat-dot.off { background: var(--line); }
+
+    /* ===== Modal de KPI (fila/lista da categoria) — mesma casca .fc-ov/.fc-card ===== */
+    .km-card { max-width: 560px; }
+    .km-sub { font-size: 12.5px; color: var(--muted); margin: 4px 0 14px; line-height: 1.5; }
+    .km-list { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; }
+    .km-row { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--card-2); }
+    .km-row.km-recusada { opacity: .55; }
+    .km-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .km-nome { font-weight: 800; font-size: 14px; color: var(--ink); }
+    .km-email { font-size: 11.5px; color: var(--muted); word-break: break-all; margin-top: 1px; }
+    .km-venc { font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 999px; color: var(--red); background: rgba(229,72,77,.16); white-space: nowrap; flex: 0 0 auto; }
+    .km-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .km-acts .btn { width: auto; flex: 0 0 auto; }
+    .km-recusada-tag { font-size: 11px; font-weight: 800; color: var(--muted); }
+    .km-empty { text-align: center; color: var(--muted); padding: 24px 10px; font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="ad-wrap">
     <div class="ad-head">
       <div class="ad-brand">MorbiusFin <small>Painel de acessos</small></div>
+      <div class="ad-verpill" id="adVerPill" hidden></div>
       <div class="ad-who" id="adWho"></div>
     </div>
     <div id="adView"></div>
