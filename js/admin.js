@@ -65,9 +65,9 @@
   // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
   // Todos MENSAIS recorrentes (Plus/Pro/Ultimate). Sem ciclo anual, sem vitalício.
   var PLANOS_DEF = [
-    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 9,90/mês", link_mensal: "https://mpago.la/1v75rri" },
-    { id: "pro", nome: "Pro", desc: "Tudo do Plus + gráficos, insights, PDF, temas, resumo semanal", preco_mensal: "R$ 16,90/mês", link_mensal: "https://mpago.la/348pX4C" },
-    { id: "ultimate", nome: "Ultimate", desc: "Tudo do Pro + Simulador de compra, conta conjunta e foto de perfil", preco_mensal: "R$ 39,90/mês", link_mensal: "https://mpago.la/17XLZZw" },
+    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 12,90/mês", link_mensal: "https://pay.kiwify.com.br/uxARcjm" },
+    { id: "pro", nome: "Pro", desc: "Tudo do Plus + gráficos, insights, PDF, temas, resumo semanal", preco_mensal: "R$ 21,90/mês", link_mensal: "https://pay.kiwify.com.br/XDZuJ2b" },
+    { id: "ultimate", nome: "Ultimate", desc: "Tudo do Pro + Simulador de compra, conta conjunta e foto de perfil", preco_mensal: "R$ 39,90/mês", link_mensal: "https://pay.kiwify.com.br/NVXyCrt" },
   ];
   var _planosCfg = null;
   async function loadPlanosCfg() {
