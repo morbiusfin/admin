@@ -65,9 +65,9 @@
   // PLANOS (preços/textos/links) — editáveis aqui; salvos em config.planos (JSON); o app lê e mostra na tela de planos.
   // Todos MENSAIS recorrentes (Plus/Pro/Ultimate). Sem ciclo anual, sem vitalício.
   var PLANOS_DEF = [
-    { id: "plus", nome: "Plus", desc: "Sync na nuvem + backup automático + multi-dispositivo", preco_mensal: "R$ 12,90/mês", link_mensal: "https://pay.kiwify.com.br/uxARcjm" },
-    { id: "pro", nome: "Pro", desc: "Tudo do Plus + gráficos, insights, PDF, temas, resumo semanal", preco_mensal: "R$ 21,90/mês", link_mensal: "https://pay.kiwify.com.br/XDZuJ2b" },
-    { id: "ultimate", nome: "Ultimate", desc: "Tudo do Pro + Simulador de compra, conta conjunta e foto de perfil", preco_mensal: "R$ 39,90/mês", link_mensal: "https://pay.kiwify.com.br/NVXyCrt" },
+    { id: "plus", nome: "Plus", desc: "Nuvem + backup automático. Troque de celular sem perder nada e use em vários aparelhos.", preco_mensal: "R$ 12,90/mês", link_mensal: "https://pay.kiwify.com.br/uxARcjm" },
+    { id: "pro", nome: "Pro", desc: "Veja pra onde vai seu dinheiro: gráficos, insights, relatório em PDF, temas e resumo semanal.", preco_mensal: "R$ 21,90/mês", link_mensal: "https://pay.kiwify.com.br/XDZuJ2b" },
+    { id: "ultimate", nome: "Ultimate", desc: "O MorbiusFin completo: simulador de compras, conta conjunta com seu par e foto de perfil.", preco_mensal: "R$ 39,90/mês", link_mensal: "https://pay.kiwify.com.br/NVXyCrt" },
   ];
   var _planosCfg = null;
   async function loadPlanosCfg() {
@@ -100,13 +100,7 @@
     try { var q = await client().from("config").select("v").eq("k", "plan_features").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _planFeat = p; } } catch (e) {}
   }
 
-  // ===== DESCONTOS por indicação (links MP por faixa de %, só mensal) =====
-  var DISC_TIERS = [10, 20, 30, 40];
-  var DISC_PLANS = [{ k: "plus", lbl: "Plus" }, { k: "pro", lbl: "Pro" }, { k: "ultimate", lbl: "Ultimate" }];
-  var _refDisc = null;
-  async function loadRefDiscCfg() {
-    try { var q = await client().from("config").select("v").eq("k", "ref_discounts").limit(1); if (!q.error && q.data && q.data[0] && q.data[0].v) { var p = JSON.parse(q.data[0].v); if (p && typeof p === "object") _refDisc = p; } } catch (e) {}
-  }
+  // (removido) Sistema de DESCONTOS por indicação — agora o convite dá 30 dias grátis pro CONVIDADO (trial no app), sem % de desconto pra quem convida.
   function baseMensal(planoKey) {
     var ps = planoMerged(); var p = ps.filter(function (x) { return x.id === planoKey; })[0]; if (!p) return 0;
     var m = String(p.preco_mensal || "").match(/[\d.,]+/); if (!m) return 0;
@@ -126,34 +120,7 @@
     var s = String(l.validade); var d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T23:59:59-03:00") : new Date(s);
     return isNaN(d.getTime()) || d.getTime() >= Date.now();
   }
-  function renderDescontos() {
-    var c = content(); if (!c) return;
-    var rd = _refDisc || {};
-    var blocks = DISC_PLANS.map(function (p) {
-      var base = baseMensal(p.k);
-      var rows = DISC_TIERS.map(function (t) {
-        var price = base * (1 - t / 100);
-        var val = (rd[p.k] && rd[p.k][t]) || "";
-        return '<div class="dz-row"><span class="dz-tier">' + t + '% OFF</span><span class="dz-price">' + (base ? fmtBRL(price) + "/mês" : "—") + '</span><input class="dz-link" data-p="' + p.k + '" data-t="' + t + '" placeholder="link Mercado Pago" value="' + esc(val) + '"></div>';
-      }).join("");
-      return '<div class="pl-card"><div class="pl-h">' + esc(p.lbl) + ' <span class="pl-id">base ' + (base ? fmtBRL(base) : "—") + '/mês</span></div>' + rows + '</div>';
-    }).join("");
-    c.innerHTML = '<div class="ad-card">'
-      + '<div class="pl-intro">Cole os links do Mercado Pago com desconto (mensal). O preço com desconto é calculado da <b>base</b> (aba Planos). A pessoa cai no link da faixa conforme quantos amigos qualificou (5%/amigo → faixas de 10%, teto 40%).</div>'
-      + blocks
-      + '<div class="pl-save-row"><button type="button" class="btn primary" id="dzSave">Salvar e publicar</button><span id="dzMsg" class="ad-trial-msg"></span></div>'
-      + '<div class="pl-note">Se faltar um link de faixa, o app usa o link normal do plano. Anual não tem desconto.</div></div>';
-    var sv = c.querySelector("#dzSave");
-    sv.onclick = async function () {
-      var out = {};
-      c.querySelectorAll(".dz-link").forEach(function (i) { var v = i.value.trim(); if (v) { (out[i.dataset.p] = out[i.dataset.p] || {})[i.dataset.t] = v; } });
-      var msg = c.querySelector("#dzMsg"); sv.disabled = true; sv.textContent = "…";
-      var r = await client().from("config").upsert({ k: "ref_discounts", v: JSON.stringify(out) }).select();
-      sv.disabled = false; sv.textContent = "Salvar e publicar";
-      if (r.error) { msg.textContent = "Erro — rodou trial-config?"; msg.className = "ad-trial-msg bad"; return; }
-      _refDisc = out; msg.textContent = "✓ publicado"; msg.className = "ad-trial-msg ok"; adToast("🎁 Descontos atualizados");
-    };
-  }
+  // (removido) renderDescontos — a aba "Descontos" saiu. O convite agora dá 30 dias grátis pro convidado (nada a configurar aqui).
   function planFeatMerged() {
     var out = {};
     PLAN_LIST.forEach(function (p) { var base = FEAT_DEF[p.k] || {}, cfg = (_planFeat && _planFeat[p.k]) || {}, row = {}; FEATURE_LIST.forEach(function (f) { row[f.k] = (cfg[f.k] != null) ? !!cfg[f.k] : !!base[f.k]; }); out[p.k] = row; });
@@ -235,10 +202,10 @@
         + '</div>';
     }).join("");
     c.innerHTML = '<div class="ad-card">'
-      + '<div class="pl-intro">Edite preços, textos e links de pagamento (Mercado Pago). Todos os planos são <b>mensais recorrentes</b> (Plus/Pro/Ultimate). <b>Salvar</b> publica direto no app de produção.</div>'
+      + '<div class="pl-intro">Edite preços, textos e links de pagamento do <b>Kiwify</b>. Todos os planos são <b>mensais recorrentes</b> (Plus/Pro/Ultimate). <b>Salvar</b> publica direto no app de produção.</div>'
       + blocks
       + '<div class="pl-save-row"><button type="button" class="btn primary" id="plSave">Salvar e publicar</button><span id="plMsg" class="ad-trial-msg"></span></div>'
-      + '<div class="pl-note">Preço é texto livre (ex.: "R$ 9,90/mês"). Link vazio → botão mostra "Em breve" no app. Cor e selo do plano seguem fixos.</div>'
+      + '<div class="pl-note">Preço é texto livre (ex.: "R$ 12,90/mês"). Cole o link de checkout do <b>Kiwify</b>. Link vazio → botão mostra "Em breve" no app. Cor e selo do plano seguem fixos.</div>'
       + '</div>';
     var sv = c.querySelector("#plSave");
     sv.onclick = async function () {
@@ -272,7 +239,7 @@
     if (dias === 1) return { txt: "falta 1 dia", cls: "dias-poucos" };
     return { txt: "faltam " + dias + " dias", cls: dias <= 3 ? "dias-poucos" : "dias-ok" };
   }
-  // abas: Painel (dashboard) · Contas (lista) · Uso (dash + ranking) · Planos · Acessos · Descontos
+  // abas: Painel (dashboard) · Contas (lista) · Uso (dash + ranking) · Planos · Acessos
   // Barra ROLÁVEL na horizontal (nunca corta aba nenhuma) — fade nas bordas indica que dá pra rolar.
   function renderShell() {
     view().innerHTML = '<div class="ad-tabbar" id="adTabbar"><div class="ad-tabs" id="adTabs">'
@@ -281,11 +248,10 @@
       + '<button type="button" class="ad-tab' + (_tab === "uso" ? " on" : "") + '" data-tab="uso">📈 Uso</button>'
       + '<button type="button" class="ad-tab' + (_tab === "planos" ? " on" : "") + '" data-tab="planos">💳 Planos</button>'
       + '<button type="button" class="ad-tab' + (_tab === "acessos" ? " on" : "") + '" data-tab="acessos">🔑 Acessos</button>'
-      + '<button type="button" class="ad-tab' + (_tab === "descontos" ? " on" : "") + '" data-tab="descontos">🎁 Descontos</button>'
       + '</div></div><div id="adContent"></div>';
     view().querySelectorAll(".ad-tab").forEach(function (b) { b.onclick = function () { _tab = b.dataset.tab; renderShell(); }; });
     bindTabScrollFade();
-    if (_tab === "painel") renderDashboard(); else if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else if (_tab === "descontos") renderDescontos(); else renderTable("");
+    if (_tab === "painel") renderDashboard(); else if (_tab === "uso") renderUsage(); else if (_tab === "planos") renderPlanos(); else if (_tab === "acessos") renderAcessos(); else renderTable("");
   }
   // liga o fade das bordas da barra de abas conforme a posição do scroll + garante a aba ativa visível
   function bindTabScrollFade() {
@@ -637,18 +603,18 @@
       out.push({ icon: "🔔", tone: "warn", titulo: "Só " + covPush + "% têm push ativo",
         texto: d.pushAtivos + " de " + d.total + " contas · " + (d.total - d.pushAtivos) + " não recebem teus avisos nem lembrete de vencimento." });
     }
-    // 5) Indicações
+    // 5) Indicações (convite → 30 dias grátis pro convidado; aqui só o CONTADOR de quem veio por convite)
     var refEntries = Object.keys(_refCounts).filter(function (k) { return _refCounts[k] > 0; });
     if (refEntries.length) {
       var totalRef = refEntries.reduce(function (s, k) { return s + _refCounts[k]; }, 0);
       var topUid = refEntries.reduce(function (best, k) { return (!best || _refCounts[k] > _refCounts[best]) ? k : best; }, null);
       var topL = topUid ? byUid(topUid) : null;
       var topNome = topL ? (topL.nome || topL.email || "—") : "—";
-      out.push({ icon: "🎁", tone: "ok", titulo: totalRef + " conta" + (totalRef === 1 ? "" : "s") + " " + (totalRef === 1 ? "veio" : "vieram") + " por indicação",
-        texto: "Top indicador: " + esc(topNome) + ". O joguinho tá rodando." });
+      out.push({ icon: "🎁", tone: "ok", titulo: totalRef + " conta" + (totalRef === 1 ? "" : "s") + " " + (totalRef === 1 ? "veio" : "vieram") + " por convite",
+        texto: "Top divulgador: " + esc(topNome) + ". Cada convidado entrou com 30 dias grátis." });
     } else {
-      out.push({ icon: "🎁", tone: "info", titulo: "Ninguém indicou ainda",
-        texto: "O desconto por indicação não decolou — vale incentivar (link de indicação já existe em cada conta)." });
+      out.push({ icon: "🎁", tone: "info", titulo: "Ninguém convidou ainda",
+        texto: "O convite (30 dias grátis pro amigo) não decolou — vale incentivar (o link já existe em cada conta)." });
     }
     // 6) Grátis / funil
     var nGratis = d.porPlano.teste || 0;
@@ -886,7 +852,6 @@
     try { await loadTrialCfg(); } catch (e) {}   // dias do teste grátis (pro controle no topo das Contas)
     try { await loadPlanosCfg(); } catch (e) {}  // preços/textos/links dos planos (aba Planos)
     try { await loadPlanFeatCfg(); } catch (e) {} // matriz de acessos por plano (aba Acessos)
-    try { await loadRefDiscCfg(); } catch (e) {}  // links de desconto por indicação (aba Descontos)
     try { await loadRefCounts(); } catch (e) {}   // nº de indicados por usuário (coluna nas Contas)
     try { await loadDeviceCounts(); } catch (e) {} // nº de aparelhos por usuário (gate multi-dispositivo)
     try { await loadConjunta(); } catch (e) {}    // pares de conta conjunta (convidado herda Ultimate do dono)
@@ -1217,7 +1182,7 @@
     { lbl: "👀 Cadê você?", txt: "Ei, sumiu! 👀 Suas finanças sentem sua falta. Volta pro MorbiusFin e retoma o controle em 2 minutos 💚" },
     { lbl: "💰 Fechou no azul?", txt: "Será que esse mês fechou no azul? 💰 Abre o MorbiusFin e descobre seu saldo agora 📊" },
     { lbl: "😱 Gasto invisível", txt: "Cuidado com os gastos invisíveis! 😱 Aqueles pequenos que somam no fim do mês. Anota tudo no MorbiusFin 🕵️" },
-    { lbl: "🎁 Ganhe desconto", txt: "Sabia que dá pra pagar menos? 🎁 Convida um amigo pro MorbiusFin e ganhe desconto na sua mensalidade 🤝" },
+    { lbl: "🎁 Convide um amigo", txt: "Convida um amigo pro MorbiusFin! 🎁 Quem entra pelo seu link começa com 30 dias grátis 🤝" },
     { lbl: "🚀 Experimente o Pro", txt: "Já viu os gráficos e insights do Pro? 🚀 Descobre pra onde seu dinheiro tá indo no MorbiusFin ✨" },
     { lbl: "✨ Novidade", txt: "Tem novidade no MorbiusFin! ✨ Abre o app e dá uma olhada 👀" }
   ];
