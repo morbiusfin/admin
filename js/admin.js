@@ -107,12 +107,6 @@
     return parseFloat(m[0].replace(/\./g, "").replace(",", ".")) || 0;
   }
   function fmtBRL(n) { return "R$ " + (n || 0).toFixed(2).replace(".", ","); }
-  // preço único do Ultimate (vitalício) — mesmo parser do baseMensal, mas lendo preco_unico; fallback 199.90
-  function precoUnicoUltimate() {
-    var ps = planoMerged(); var p = ps.filter(function (x) { return x.id === "ultimate"; })[0];
-    var m = p && String(p.preco_unico || "").match(/[\d.,]+/);
-    return m ? (parseFloat(m[0].replace(/\./g, "").replace(",", ".")) || 199.90) : 199.90;
-  }
   // true = plano pago (não teste) + status ativo + validade não vencida (ou vitalício sem validade) → conta que RENDE hoje
   function isAtivaNaoVencida(l) {
     if (l.status === "bloqueado") return false;
@@ -180,7 +174,15 @@
     };
   }
   function planoMerged() {
-    return PLANOS_DEF.map(function (d) { var o = (_planosCfg || []).find(function (x) { return x && x.id === d.id; }) || {}; var m = {}; for (var k in d) m[k] = d[k]; for (var k2 in o) { if (o[k2] !== "" && o[k2] != null) m[k2] = o[k2]; } return m; });
+    return PLANOS_DEF.map(function (d) {
+      var o = (_planosCfg || []).find(function (x) { return x && x.id === d.id; }) || {};
+      var m = {}; for (var k in d) m[k] = d[k];
+      for (var k2 in o) { if (o[k2] !== "" && o[k2] != null) m[k2] = o[k2]; }
+      // Modelo atual = 100% MENSAL recorrente. Descarta legado vitalício (unico/preco_unico) que possa estar
+      // salvo num config.planos antigo → a aba Planos sempre edita/salva "preço mensal", e o próximo Salvar normaliza o dado.
+      delete m.unico; delete m.preco_unico;
+      return m;
+    });
   }
   function plFld(id, k, label, val) {
     return '<label class="pl-fld"><span>' + esc(label) + '</span><input data-pl="' + esc(id) + '-' + k + '" value="' + esc(val || "") + '"></label>';
