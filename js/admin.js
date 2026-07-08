@@ -860,7 +860,6 @@
     try { await loadPushStatus(); } catch (e) {}  // sininho de push ativo por usuário
     renderShell();
     startAutoRefresh();
-    try { maybeFixContato(); } catch (e) {}   // 1x: completa nome/telefone das contas antigas que ficaram vazias
   }
   // estado do menu de opções (filtro/ordenação) + colapso das seções — persiste entre re-renders (auto-refresh 5s)
   var _ctPlanoF = "todos", _ctStatusF = "todos", _ctSort = "criado_desc";
@@ -1300,6 +1299,14 @@
       done(); renderShell(); adToast(n + " cadastro(s) atualizado(s)");
     };
   }
+  // SCROLL-LOCK: enquanto QUALQUER overlay (.fc-ov/.hp-ov) estiver aberto, trava o scroll do fundo —
+  // o card da frente rola por dentro (max-height + overflow:auto), o resto da página fica parado.
+  (function () {
+    function anyOv() { return !!document.querySelector(".fc-ov, .hp-ov"); }
+    function sync() { try { document.body.classList.toggle("ov-open", anyOv()); } catch (e) {} }
+    try { new MutationObserver(sync).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+    sync();
+  })();
   loadProdVersionPill();
   boot();
 })();

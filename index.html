@@ -139,7 +139,10 @@
     .uso-rk-n { flex: 0 0 auto; font-weight: 800; font-size: 13px; color: var(--accent, #15c266); min-width: 28px; text-align: right; }
     /* popup unica: completar nome/telefone dos cadastros antigos */
     .fc-ov { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 18px; }
-    .fc-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; max-width: 480px; width: 100%; max-height: 86vh; overflow: auto; }
+    .fc-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; max-width: 480px; width: 100%; max-height: 86vh; overflow: auto; overscroll-behavior: contain; }
+    /* overlay aberto => trava o scroll do fundo; só o card da frente rola */
+    body.ov-open { overflow: hidden; }
+    .hp-card, .km-card { overscroll-behavior: contain; }
     .fc-h { font-weight: 800; font-size: 17px; color: var(--ink); }
     .fc-sub { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
     .fc-list { display: flex; flex-direction: column; gap: 12px; }
