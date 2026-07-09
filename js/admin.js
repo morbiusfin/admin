@@ -19,6 +19,18 @@
     }
     return k;
   }
+  // Auth pro worker de push: PREFERE a SESSÃO do admin (Bearer JWT) — o worker valida no Supabase e confere
+  // o e-mail do admin, então NÃO pede chave nenhuma. Manda também a x-admin-key SE já estiver salva (compat
+  // com o worker antigo). Só cai no prompt da chave se não houver sessão nem chave salva.
+  async function pushAuthHeaders(silent) {
+    var h = { "Content-Type": "application/json" };
+    try { var s = await client().auth.getSession(); var tok = s && s.data && s.data.session && s.data.session.access_token; if (tok) h["Authorization"] = "Bearer " + tok; } catch (e) {}
+    var k = ""; try { k = localStorage.getItem(PUSH_KEY_LS) || ""; } catch (e) {}
+    if (k) h["x-admin-key"] = k;
+    if (h["Authorization"] || h["x-admin-key"]) return h;
+    if (silent) return null;
+    k = getPushKey(); if (!k) return null; h["x-admin-key"] = k; return h;
+  }
   // storageKey próprio ("mfadmin-auth"): app e admin ficam no MESMO origin (morbiusfin.github.io) e dividem
   // localStorage; sem isso a sessão do admin sobrescreveria a do app (e vice-versa). Isolado, um não derruba o outro.
   function client() { if (sb) return sb; if (!window.supabase || !window.supabase.createClient) return null; sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "mfadmin-auth" } }); return sb; }
@@ -830,11 +842,10 @@
   async function loadPushStatus() {
     _pushStatus = {};
     try {
-      var key = ""; try { key = localStorage.getItem(PUSH_KEY_LS) || ""; } catch (e) {}
-      if (!key) return;
       var emails = _all.map(function (l) { return (l.email || "").trim().toLowerCase(); }).filter(Boolean);
       if (!emails.length) return;
-      var r = await fetch(PUSH_API + "/admin/status", { method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key }, body: JSON.stringify({ emails: emails }) });
+      var hdrs = await pushAuthHeaders(true); if (!hdrs) return;   // silencioso: sem sessão/chave, não pede nada (só não mostra o sininho)
+      var r = await fetch(PUSH_API + "/admin/status", { method: "POST", headers: hdrs, body: JSON.stringify({ emails: emails }) });
       if (!r.ok) return;
       var j = await r.json(); if (j && j.status) _pushStatus = j.status;
     } catch (e) {}
@@ -1239,7 +1250,6 @@
     var send = ov.querySelector("#ntSend"); if (send) send.onclick = function () { doNotify(ov, this); };
   }
   async function doNotify(ov, btn) {
-    var key = getPushKey(); if (!key) return;
     var titulo = (ov.querySelector("#ntTitulo").value || "").trim() || "MorbiusFin 🐧";
     var corpo = (ov.querySelector("#ntCorpo").value || "").trim();
     if (!corpo) { adToast("Escreva a mensagem do recado"); ov.querySelector("#ntCorpo").focus(); return; }
@@ -1247,12 +1257,13 @@
     if (!emails.length) { adToast("Selecione ao menos um usuário"); return; }
     btn.disabled = true; btn.textContent = "Enviando…";
     try {
+      var hdrs = await pushAuthHeaders(); if (!hdrs) { btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       var r = await fetch(PUSH_API + "/admin/notify", {
-        method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key },
+        method: "POST", headers: hdrs,
         body: JSON.stringify({ emails: emails, titulo: titulo, corpo: corpo })
       });
       var j = {}; try { j = await r.json(); } catch (e) {}
-      if (r.status === 401) { try { localStorage.removeItem(PUSH_KEY_LS); } catch (e) {} adToast("Chave do admin inválida — tente de novo"); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
+      if (r.status === 401) { adToast("Sessão do admin expirou — saia e entre de novo"); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       if (!r.ok || !j.ok) { adToast("Falha ao enviar: " + (j.error || ("HTTP " + r.status))); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       try { ov.remove(); } catch (e) {}
       var extra = (j.semInscricao && j.semInscricao.length) ? " · " + j.semInscricao.length + " sem push ativo" : "";
