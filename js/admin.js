@@ -1204,11 +1204,13 @@
     if (document.getElementById("ntOv")) return;
     var umSo = !!alvoEmail;                                             // recado INDIVIDUAL (1 pessoa) vs geral
     var comEmail = _all.filter(function (l) { return (l.email || "").trim() && (!umSo || l.email === alvoEmail); });
-    var rows = comEmail.map(function (l) {
-      var nome = (l.nome && String(l.nome).trim()) ? esc(l.nome) : '<span class="ad-noname">sem nome</span>';
-      return '<label class="nt-row"><input type="checkbox" class="nt-ck" value="' + esc(l.email) + '" checked>'
-        + '<span class="nt-mid"><span class="nt-nome">' + nome + '</span><span class="nt-em">' + esc(l.email) + '</span></span></label>';
-    }).join("");
+    var allEmails = comEmail.map(function (l) { return l.email; });
+    // Destinatário = lista suspensa. Padrão "Todos"; dá pra escolher 1 pessoa. Sem floresta de checkbox.
+    var opts = '<option value="__all__">📣 Todos os usuários (' + comEmail.length + ')</option>'
+      + comEmail.map(function (l) {
+          var nm = (l.nome && String(l.nome).trim()) ? (esc(l.nome) + ' — ') : '';
+          return '<option value="' + esc(l.email) + '">' + nm + esc(l.email) + '</option>';
+        }).join("");
     var chips = NT_TEMPLATES.map(function (t, i) { return '<button type="button" class="nt-chip" data-i="' + i + '">' + esc(t.lbl) + '</button>'; }).join("")
       + '<button type="button" class="nt-chip nt-chip-blank" data-i="-1">✍️ Escrever a minha</button>';
     var ov = document.createElement("div"); ov.id = "ntOv"; ov.className = "fc-ov";
@@ -1222,10 +1224,17 @@
       + '<label class="nt-lbl">Mensagem</label>'
       + '<textarea id="ntCorpo" class="nt-corpo" rows="3" maxlength="280" placeholder="Escreva o recado…">' + esc(NT_TEMPLATES[0].txt) + '</textarea>'
       + '<div class="nt-count"><span id="ntCount">0</span>/280</div>'
-      + ((comEmail.length && !umSo) ? '<label class="nt-all"><input type="checkbox" id="ntAll" checked> Selecionar todos</label>' : '')
-      + '<div class="fc-list nt-list">' + (rows || '<div class="ad-empty">Nenhuma conta com email cadastrado.</div>') + '</div>'
+      + '<label class="nt-lbl">Para quem</label>'
+      + (umSo
+          ? ('<div class="nt-alvo-fix">👤 ' + esc(alvoEmail) + '</div>')
+          : (comEmail.length
+              ? ('<div class="nt-sel-wrap"><select id="ntAlvo" class="nt-sel">' + opts + '</select></div>'
+                  + '<div class="nt-sel-hint">Vai pra todo mundo. Troca aqui só se quiser mandar a uma pessoa.</div>')
+              : '<div class="ad-empty">Nenhuma conta com email cadastrado.</div>'))
       + '<div class="fc-acts"><button type="button" class="btn ghost" id="ntCancel">Cancelar</button><button type="button" class="btn primary" id="ntSend"' + (comEmail.length ? '' : ' disabled') + '>Enviar recado</button></div></div>';
     document.body.appendChild(ov);
+    ov.__emails = allEmails;               // lista completa (usada quando alvo = "Todos")
+    ov.__umSo = umSo ? alvoEmail : null;   // recado individual
     var close = function () { try { ov.remove(); } catch (e) {} };
     ov.querySelector("#ntX").onclick = close;
     ov.querySelector("#ntCancel").onclick = close;
@@ -1242,19 +1251,17 @@
         upd(); corpo.focus();
       };
     });
-    var all = ov.querySelector("#ntAll");
-    if (all) all.onchange = function () { ov.querySelectorAll(".nt-ck").forEach(function (c) { c.checked = all.checked; }); };
-    ov.querySelectorAll(".nt-ck").forEach(function (c) {
-      c.onchange = function () { if (!all) return; var todos = Array.prototype.every.call(ov.querySelectorAll(".nt-ck"), function (x) { return x.checked; }); all.checked = todos; };
-    });
     var send = ov.querySelector("#ntSend"); if (send) send.onclick = function () { doNotify(ov, this); };
   }
   async function doNotify(ov, btn) {
     var titulo = (ov.querySelector("#ntTitulo").value || "").trim() || "MorbiusFin 🐧";
     var corpo = (ov.querySelector("#ntCorpo").value || "").trim();
     if (!corpo) { adToast("Escreva a mensagem do recado"); ov.querySelector("#ntCorpo").focus(); return; }
-    var emails = []; ov.querySelectorAll(".nt-ck").forEach(function (c) { if (c.checked) emails.push(c.value); });
-    if (!emails.length) { adToast("Selecione ao menos um usuário"); return; }
+    var emails = [];
+    var sel = ov.querySelector("#ntAlvo");
+    if (sel) { emails = (sel.value === "__all__") ? (ov.__emails || []) : [sel.value]; }
+    else if (ov.__umSo) { emails = [ov.__umSo]; }
+    if (!emails.length) { adToast("Nenhuma conta com email cadastrado"); return; }
     btn.disabled = true; btn.textContent = "Enviando…";
     try {
       var hdrs = await pushAuthHeaders(); if (!hdrs) { btn.disabled = false; btn.textContent = "Enviar recado"; return; }

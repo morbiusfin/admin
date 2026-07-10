@@ -155,7 +155,7 @@
     .fc-acts { display: flex; gap: 10px; margin-top: 16px; }
     .fc-acts .btn { flex: 1; }
     /* popup de notificação de despesas a vencer */
-    .nt-card { position: relative; display: flex; flex-direction: column; overflow: hidden; }   /* card não rola; só a lista rola dentro → botões ficam fixos no rodapé */
+    .nt-card { position: relative; display: flex; flex-direction: column; overflow-y: auto; }   /* card rola inteiro (destinatário virou lista suspensa) */
     .nt-card .fc-acts { flex: 0 0 auto; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); background: var(--card); }
     .wn-x { position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; background: var(--card-2); color: var(--muted); border-radius: 9px; font-size: 15px; font-weight: 800; cursor: pointer; line-height: 1; }
     .wn-x:active { transform: scale(.94); }
@@ -178,6 +178,12 @@
     .nt-chip-blank { border-style: dashed; }
     .nt-corpo { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; }
     .nt-count { text-align: right; font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .nt-sel-wrap { position: relative; }
+    .nt-sel-wrap::after { content: "▾"; position: absolute; right: 13px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); font-size: 12px; }
+    .nt-sel { width: 100%; padding: 12px 34px 12px 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--card-2); color: var(--ink); font-family: var(--font); font-size: 14px; font-weight: 700; appearance: none; -webkit-appearance: none; cursor: pointer; }
+    .nt-sel:focus { outline: none; border-color: rgba(21,194,102,.6); }
+    .nt-sel-hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+    .nt-alvo-fix { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px; background: var(--card-2); color: var(--ink); font-size: 14px; font-weight: 700; word-break: break-all; }
     .ad-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .ad-controls select, .ad-controls input[type=date] { padding: 8px 10px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-family: var(--font); font-size: 13px; }
     .ad-controls .btn.sm { min-height: 40px; }
