@@ -730,7 +730,7 @@
     var base = new Date();
     if (l.validade) { var v = parseValidade(l.validade); if (v && v > base) base = v; }
     base.setDate(base.getDate() + dias);
-    var novaVal = base.toISOString().slice(0, 10);
+    var novaVal = brtDay(base);
     var patch = { validade: novaVal }; if (l.status === "bloqueado") patch.status = "ativo";
     var r = await client().from("licencas").update(patch).eq("user_id", uid).select();
     if (r.error) { adToast("Falha ao liberar: " + r.error.message); return; }
@@ -1036,8 +1036,8 @@
       rsv.disabled = false; rsv.textContent = "Salvar";
       if (r.error) { if (tm) { tm.textContent = "Erro ao salvar"; tm.className = "ad-trial-msg bad"; } return; }
       _reengageCfg = n;
-      if (tm) { tm.textContent = "✓ salvo · o worker usa no reengajamento"; tm.className = "ad-trial-msg ok"; }
-      adToast("🔕 Reengajamento: " + n + " dia(s) sem uso");
+      if (tm) { tm.textContent = "✓ salvo · dispara sozinho 1x/dia (meio-dia) p/ quem sumiu há " + n + " dia(s)"; tm.className = "ad-trial-msg ok"; }
+      adToast("🔕 Reengajamento ligado: cutuca quem sumiu há " + n + " dia(s)");
     };
     document.querySelectorAll(".ad-row").forEach(function (row) {
       var uid = row.dataset.uid;
@@ -1067,6 +1067,11 @@
     var d = new Date(ts); if (isNaN(d.getTime())) return "";
     return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(", ", " - ");
   }
+  // AAAA-MM-DD no fuso de Brasília (evita o dia "virar" às 21h, que é 00h UTC). Usar SEMPRE p/ agrupar por dia.
+  function brtDay(ts) {
+    var d = new Date(ts); if (isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  }
   var USO_SINCE_KEY = "mfadmin.usoSince";   // reset "soft": só conta acessos a partir deste ts (não apaga a tabela)
   // Aba USO: dash de acessos por dia (14d) + ranking de quem mais acessa (com último acesso) + reset.
   async function renderUsage() {
@@ -1082,10 +1087,10 @@
     }
     var rows = q.data || [];
     var days = [], map = {};
-    for (var i = 13; i >= 0; i--) { var dt = new Date(Date.now() - i * 86400000); var key = dt.toISOString().slice(0, 10); days.push(key); map[key] = 0; }
+    for (var i = 13; i >= 0; i--) { var dt = new Date(Date.now() - i * 86400000); var key = brtDay(dt); days.push(key); map[key] = 0; }
     var perUser = {}, lastTs = {};
     rows.forEach(function (r) {
-      var key = String(r.ts).slice(0, 10); if (key in map) map[key]++;
+      var key = brtDay(r.ts); if (key in map) map[key]++;
       perUser[r.user_id] = (perUser[r.user_id] || 0) + 1;
       var t = +new Date(r.ts); if (!lastTs[r.user_id] || t > lastTs[r.user_id]) lastTs[r.user_id] = t;   // último acesso por pessoa
     });
@@ -1142,7 +1147,7 @@
     var base = new Date();
     if (l.validade) { var v = new Date(l.validade); if (!isNaN(v.getTime()) && v > base) base = v; }
     base.setDate(base.getDate() + dias);
-    var novaVal = base.toISOString().slice(0, 10);
+    var novaVal = brtDay(base);
     var inp = row.querySelector('[data-k="validade"]'); if (inp) inp.value = novaVal;
     var r = await client().from("licencas").update({ validade: novaVal }).eq("user_id", uid).select();   // só estende o prazo; mantém o plano atual
     if (r.error) { alert("Falha: " + r.error.message); return; }
@@ -1253,6 +1258,31 @@
     });
     var send = ov.querySelector("#ntSend"); if (send) send.onclick = function () { doNotify(ov, this); };
   }
+  // Resultado do envio em um cartão claro (não some sozinho): quantos receberam de quantos, e quantos sem push.
+  function showEnvioResult(j, total) {
+    document.querySelectorAll("#ntResOv").forEach(function (x) { x.remove(); });
+    var sem = (j && j.semInscricao && j.semInscricao.length) || 0;
+    var alvos = (j && j.alvos) || total || 0;
+    var receberam = Math.max(0, alvos - sem);
+    var ent = (j && j.enviados) || 0;
+    var ov = document.createElement("div"); ov.id = "ntResOv"; ov.className = "fc-ov";
+    ov.innerHTML = '<div class="fc-card nt-res"><button type="button" class="wn-x" id="ntResX" aria-label="Fechar">✕</button>'
+      + '<div class="nt-res-ic">' + (receberam ? "✅" : "⚠️") + '</div>'
+      + '<div class="nt-res-h">' + (receberam ? "Recado enviado!" : "Ninguém recebeu") + '</div>'
+      + '<div class="nt-res-big">' + receberam + '<span class="nt-res-of"> de ' + alvos + '</span></div>'
+      + '<div class="nt-res-lbl">pessoa(s) receberam a notificação</div>'
+      + '<div class="nt-res-rows">'
+      + '<div class="nt-res-row"><span>📨 Notificações entregues</span><b>' + ent + '</b></div>'
+      + (sem ? '<div class="nt-res-row warn"><span>🔕 Sem notificação ativa</span><b>' + sem + '</b></div>' : '')
+      + '</div>'
+      + (sem ? '<div class="nt-res-note">Quem está sem notificação ativa não abriu o app com os avisos ligados — por isso não dá pra alcançar agora.</div>' : '')
+      + '<div class="fc-acts"><button type="button" class="btn primary" id="ntResOk">Beleza</button></div></div>';
+    document.body.appendChild(ov);
+    var close = function () { try { ov.remove(); } catch (e) {} };
+    ov.querySelector("#ntResOk").onclick = close;
+    ov.querySelector("#ntResX").onclick = close;
+    ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+  }
   async function doNotify(ov, btn) {
     var titulo = (ov.querySelector("#ntTitulo").value || "").trim() || "MorbiusFin 🐧";
     var corpo = (ov.querySelector("#ntCorpo").value || "").trim();
@@ -1273,8 +1303,7 @@
       if (r.status === 401) { adToast("Sessão do admin expirou — saia e entre de novo"); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       if (!r.ok || !j.ok) { adToast("Falha ao enviar: " + (j.error || ("HTTP " + r.status))); btn.disabled = false; btn.textContent = "Enviar recado"; return; }
       try { ov.remove(); } catch (e) {}
-      var extra = (j.semInscricao && j.semInscricao.length) ? " · " + j.semInscricao.length + " sem push ativo" : "";
-      adToast("🔔 Enviado a " + (j.enviados || 0) + " de " + (j.alvos || emails.length) + extra);
+      showEnvioResult(j, emails.length);
     } catch (e) {
       adToast("Erro de rede ao enviar"); btn.disabled = false; btn.textContent = "Enviar recado";
     }
